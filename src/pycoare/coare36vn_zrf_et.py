@@ -26,8 +26,42 @@ pycoare version v1 by Yu Gao and Tom Farrar, Feb 2026
 """
 import numpy as np
 import os
+import datetime as _dt
+
+
+def _jd_from_datetime_like(jd):
+    arr = np.asarray(jd)
+    if arr.dtype.kind == "M":
+        days = arr.astype("datetime64[D]")
+        years = arr.astype("datetime64[Y]")
+        day_of_year = (days - years).astype("timedelta64[D]").astype(float) + 1.0
+        frac = (arr - days).astype("timedelta64[ns]").astype(float) / (24.0 * 3600.0 * 1e9)
+        return day_of_year + frac
+    if arr.dtype.kind == "O":
+        flat = arr.reshape(-1)
+        if flat.size == 0:
+            return None
+        if not isinstance(flat[0], (_dt.datetime, _dt.date)):
+            return None
+        jd_vals = np.empty(flat.size, dtype=float)
+        for i, dt_val in enumerate(flat):
+            if isinstance(dt_val, _dt.datetime):
+                if dt_val.tzinfo is not None:
+                    dt_val = dt_val.astimezone(_dt.timezone.utc).replace(tzinfo=None)
+            else:
+                dt_val = _dt.datetime(dt_val.year, dt_val.month, dt_val.day)
+            day_of_year = dt_val.timetuple().tm_yday
+            frac = (
+                dt_val.hour / 24.0
+                + dt_val.minute / 1440.0
+                + dt_val.second / 86400.0
+                + dt_val.microsecond / 8.64e10
+            )
+            jd_vals[i] = day_of_year + frac
+        return jd_vals.reshape(arr.shape)
+    return None
     
-def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi,rain, Ss, cp=None, sigH=None, zrf_u=10.0, zrf_t=10.0, zrf_q=10.0, coolskin=True, albedo='constant'):   
+def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi,rain, Ss, cp=None, sigH=None, zrf_u=10.0, zrf_t=10.0, zrf_q=10.0, coolskin=True, albedo='constant', return_albedo=False):   
 #**************************************************************************
 # VERSION INFO:
     
@@ -98,6 +132,7 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
 #  lon = longitude defined positive to east, if using other version,
 #             adjust the eorw string input to albedo_vector function
 #  jd = year day or julian day, where day Jan 1 00:00 UTC = 0
+#       also accepts datetime-like inputs (UTC) and computes yearday internally
 #  zi = PBL height (m) (default or typical value = 600m)
 #  rain = rain rate (mm/hr)
 #  Ss = sea surface salinity (PSU)
@@ -108,6 +143,8 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
 #  coolskin = True to run cool-skin model, False to disable (default True)
 #  albedo = 'constant' to use constant albedo correction (default),
 #           'Payne1972' to use zenith-angle varying albedo from Payne (1972)
+#  return_albedo = False to keep legacy output shape; True to append
+#           alb, T_sw, solarmax_sw, psi_sw to the output array
     
 #**************************************************************************
 #### OUTPUTS: the user controls the output array A at the end of the code.
@@ -138,6 +175,11 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
 #    dT_skin = cool-skin temperature depression (degC), pos value means skin is cooler than subskin
 #    dq_skin = cool-skin humidity depression (g/kg)
 #    dz_skin = cool-skin thickness (m)
+#    (optional appended outputs if return_albedo=True)
+#    alb = shortwave albedo (Payne 1972 or constant)
+#    T_sw = shortwave transmission factor (min(2, sw_dn/solarmax_sw))
+#    solarmax_sw = maximum shortwave at top of atmosphere (W/m^2)
+#    psi_sw = solar altitude angle (degrees)
 #    Urf = wind speed at reference height (user can select height at input)
 #    Trf = air temperature at reference height
 #    Qrf = air specific humidity at reference height
@@ -251,6 +293,10 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
     # if inputs are already ndarray float this does nothing
     # otherwise copies are created in the local namespace
     # .flatten() return a 1D version in case single value input is already an array (array([[]]) vs array([]))
+    jd_from_dt = _jd_from_datetime_like(jd)
+    if jd_from_dt is not None:
+        jd = jd_from_dt
+
     if u.size ==1 and t.size ==1: 
         u = np.copy(np.asarray([u], dtype=float)).flatten()
         zu = np.copy(np.asarray([zu], dtype=float)).flatten()
@@ -374,15 +420,19 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
     # Check: albedo should usually peak at sunrise not at sunset, though it may
     # vary based on sw_dn.
     if albedo == 'Payne1972':
-        alb,T_sw,solarmax_sw,psi_sw = albedo_vector(sw_dn,jd,lon,lat,eorw='E')
-        sw_net = np.multiply((1 - alb),sw_dn)
+        alb, T_sw, solarmax_sw, psi_sw = albedo_vector(sw_dn, jd, lon, lat, eorw='E')
+        sw_net = np.multiply((1 - alb), sw_dn)
     elif albedo == 'constant':
         # *** for constant albedo:
+        alb = 0.055 * np.ones(N)
+        T_sw = np.full(N, np.nan)
+        solarmax_sw = np.full(N, np.nan)
+        psi_sw = np.full(N, np.nan)
         sw_net = 0.945 * sw_dn  # constant albedo correction, positive heating ocean
     else:
         print("please provide albedo as 'constant' or 'Payne1972'")
-        alb,T_sw,solarmax_sw,psi_sw = albedo_vector(sw_dn,jd,lon,lat,eorw='E')
-        sw_net = np.multiply((1 - alb),sw_dn)
+        alb, T_sw, solarmax_sw, psi_sw = albedo_vector(sw_dn, jd, lon, lat, eorw='E')
+        sw_net = np.multiply((1 - alb), sw_dn)
     
     ### net longwave aka IR aka infrared
     # initial value here is positive for cooling ocean in the calculations
@@ -507,10 +557,10 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
         ik = np.array(np.where(rr[iice] <= 0.135))
         rt[iice[ik]] = rr[iice[ik]] * np.exp(1.25)
         rq[iice[ik]] = rr[iice[ik]] * np.exp(1.61)
-        ik = np.array(np.where(rr[iice] > np.logical_and(0.135,rr[iice]) <= 2.5))
+        ik = np.array(np.where((rr[iice] > 0.135) & (rr[iice] <= 2.5)))
         rt[iice[ik]] = np.multiply(rr[iice[ik]],np.exp(0.149 - 0.55 * np.log(rr[iice[ik]])))
         rq[iice[ik]] = np.multiply(rr[iice[ik]],np.exp(0.351 - 0.628 * np.log(rr[iice[ik]])))
-        ik = np.array(np.where(rr[iice] > np.logical_and(2.5,rr[iice]) <= 1000))
+        ik = np.array(np.where((rr[iice] > 2.5) & (rr[iice] <= 1000)))
         rt[iice[ik]] = np.multiply(rr[iice[ik]],np.exp(0.317 - 0.565 * np.log(rr[iice[ik]]) - np.multiply(0.183 * np.log(rr[iice[ik]]),np.log(rr[iice[ik]]))))
         rq[iice[ik]] = np.multiply(rr[iice[ik]],np.exp(0.396 - 0.512 * np.log(rr[iice[ik]]) - np.multiply(0.18 * np.log(rr[iice[ik]]),np.log(rr[iice[ik]]))))
         # Dalton number is close to COARE 3.0 value
@@ -755,7 +805,10 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
     # adjust A output as desired:
     out = np.array([usr,tau,hsb,hlb,hbb,hsbb,hlwebb,tsr,qsr,zo,zot,zoq,Cd,Ch,Ce,L,zeta,dT_skinx,dq_skinx,dz_skin,Urf,Trf,Qrf,RHrf,UrfN,TrfN,QrfN,lw_net,sw_net,Le,rhoa,UN,U10,U10N,Cdn_10,Chn_10,Cen_10,hrain,Qs,Evap,T10,T10N,Q10,Q10N,RH10,P10,rhoa10,gust,wc_frac,Edis])
     #                1   2   3   4   5   6    7      8   9  10  11  12 13 14 15 16  17   18       19        20    21  22  23  24   25   26   27     28    29   30  31  32 33   34    35     36    37      38  39  40   41  42   43   44   45  46   47    48     49    50
+    # optional (if return_albedo=True): 51=alb, 52=T_sw, 53=solarmax_sw, 54=psi_sw
     A = np.column_stack(out)
+    if return_albedo:
+        A = np.column_stack((A, alb, T_sw, solarmax_sw, psi_sw))
     return A
     
 #------------------------------------------------------------------------------

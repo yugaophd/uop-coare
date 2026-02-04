@@ -14,6 +14,18 @@ Standard install:
 pip install .
 ```
 
+## Update
+
+Editable install (pull latest code, then re-run if needed):
+```bash
+pip install -e .
+```
+
+Standard install:
+```bash
+pip install -U .
+```
+
 ## Quick Start
 
 ```python
@@ -44,6 +56,7 @@ A = coare36vn_zrf_et(
     zrf_q=10.0,
     coolskin=True,
     albedo="constant",
+    return_albedo=False,
 )
 ```
 
@@ -51,4 +64,24 @@ A = coare36vn_zrf_et(
 
 - `coolskin=True` runs the cool-skin model; set `coolskin=False` to disable it.
 - `albedo="constant"` uses a constant albedo correction; use `albedo="Payne1972"` for zenith-angle varying albedo.
+- `return_albedo=False` keeps the legacy output shape; set `return_albedo=True` to append `alb`, `T_sw`, `solarmax_sw`, and `psi_sw` to the output array.
 - Inputs may be scalars or vectors. See the function docstring for full details.
+- `jd` can be numeric yearday or datetime-like inputs (UTC); datetime inputs are converted to yearday internally.
+
+## Test Demo
+
+```bash
+pip install -e ".[test]"
+pytest
+```
+
+Plot outputs (saved by default):
+- `tests/artifacts/albedo_payne1972.png`
+- `tests/artifacts/albedo_payne1972_first48h.png`
+- `tests/artifacts/sw_net_compare_first48h.png`
+- `tests/artifacts/sw_net_constant_albedo.png`
+
+Disable plot generation:
+```bash
+PLOT_TESTS=0 pytest
+```
