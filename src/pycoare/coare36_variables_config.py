@@ -1,3 +1,5 @@
+import copy
+
 reference_height = 3.0 #m, change the reference height here
 
 variables_info = {
@@ -558,6 +560,42 @@ variables_info = {
         "valid_max": 90.0
         },
     }
+
+
+def _normalize_albedo_method(albedo_method):
+    if albedo_method is None:
+        return None
+    if not isinstance(albedo_method, str):
+        raise TypeError("albedo_method must be a string or None")
+    key = albedo_method.strip().lower()
+    if key in {"payne1972", "payne_1972", "payne-1972", "payne"}:
+        return "Payne1972"
+    if key in {"constant", "const"}:
+        return "constant"
+    raise ValueError("albedo_method must be 'Payne1972' or 'constant'")
+
+
+def get_variables_info(albedo_method=None):
+    """Return a deep copy of variables_info with optional albedo metadata tweaks."""
+    info = copy.deepcopy(variables_info)
+    method = _normalize_albedo_method(albedo_method)
+    if method is None:
+        return info
+    albedo_meta = info.get("albedo")
+    if albedo_meta is None:
+        return info
+    if method == "Payne1972":
+        albedo_meta["long_name"] = "shortwave albedo (Payne 1972)"
+        albedo_meta["description"] = (
+            "Computed with zenith-angle varying albedo from Payne (1972)."
+        )
+    else:
+        albedo_meta["long_name"] = "shortwave albedo (constant 0.055)"
+        albedo_meta["description"] = (
+            "Constant shortwave albedo of 0.055 (net factor 0.945)."
+        )
+    albedo_meta["comment"] = f"albedo_method={method}"
+    return info
 ## check if the outputs match
 
 ## difference_between_sea_surface_skin_temperature_and_sea_surface_subskin_temperature

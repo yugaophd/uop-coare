@@ -61,7 +61,7 @@ def _jd_from_datetime_like(jd):
         return jd_vals.reshape(arr.shape)
     return None
     
-def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi,rain, Ss, cp=None, sigH=None, zrf_u=10.0, zrf_t=10.0, zrf_q=10.0, coolskin=True, albedo='constant', return_albedo=False):   
+def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi,rain, Ss, cp=None, sigH=None, zrf_u=10.0, zrf_t=10.0, zrf_q=10.0, coolskin=True, albedo='constant', return_albedo=False, wind_direction=None):   
 #**************************************************************************
 # VERSION INFO:
     
@@ -145,6 +145,9 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
 #           'Payne1972' to use zenith-angle varying albedo from Payne (1972)
 #  return_albedo = False to keep legacy output shape; True to append
 #           alb, T_sw, solarmax_sw, psi_sw to the output array
+#  wind_direction = wind direction in degrees from which the wind is coming
+#           (clockwise from north, Vaisala WXT convention). Used to compute
+#           wind stress components; set to None to skip.
     
 #**************************************************************************
 #### OUTPUTS: the user controls the output array A at the end of the code.
@@ -802,15 +805,40 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
     # this sign flip means lw_net, net long wave flux, is equivalent to:
     # lw_net = 0.97*(lw_dn_best - 5.67e-8*(Tskin+C2K).^4);
     
+    if wind_direction is None:
+        tau_x = np.full(N, np.nan)
+        tau_y = np.full(N, np.nan)
+    else:
+        tau_x, tau_y = calculate_wind_stress_components(tau, wind_direction)
+
     # adjust A output as desired:
-    out = np.array([usr,tau,hsb,hlb,hbb,hsbb,hlwebb,tsr,qsr,zo,zot,zoq,Cd,Ch,Ce,L,zeta,dT_skinx,dq_skinx,dz_skin,Urf,Trf,Qrf,RHrf,UrfN,TrfN,QrfN,lw_net,sw_net,Le,rhoa,UN,U10,U10N,Cdn_10,Chn_10,Cen_10,hrain,Qs,Evap,T10,T10N,Q10,Q10N,RH10,P10,rhoa10,gust,wc_frac,Edis])
-    #                1   2   3   4   5   6    7      8   9  10  11  12 13 14 15 16  17   18       19        20    21  22  23  24   25   26   27     28    29   30  31  32 33   34    35     36    37      38  39  40   41  42   43   44   45  46   47    48     49    50
-    # optional (if return_albedo=True): 51=alb, 52=T_sw, 53=solarmax_sw, 54=psi_sw
+    out = np.array([usr,tau,hsb,hlb,hbb,hsbb,hlwebb,tsr,qsr,zo,zot,zoq,Cd,Ch,Ce,L,zeta,dT_skinx,dq_skinx,dz_skin,Urf,Trf,Qrf,RHrf,UrfN,TrfN,QrfN,lw_net,sw_net,Le,rhoa,UN,U10,U10N,Cdn_10,Chn_10,Cen_10,hrain,Qs,Evap,T10,T10N,Q10,Q10N,RH10,P10,rhoa10,gust,wc_frac,Edis,tau_x,tau_y])
+    #                1   2   3   4   5   6    7      8   9  10  11  12 13 14 15 16  17   18       19        20    21  22  23  24   25   26   27     28    29   30  31  32 33   34    35     36    37      38  39  40   41  42   43   44   45  46   47    48     49    50  51  52
+    # optional (if return_albedo=True): 53=alb, 54=T_sw, 55=solarmax_sw, 56=psi_sw
     A = np.column_stack(out)
     if return_albedo:
         A = np.column_stack((A, alb, T_sw, solarmax_sw, psi_sw))
     return A
     
+#------------------------------------------------------------------------------
+
+def calculate_wind_stress_components(stress_magnitude, wind_direction_degrees):
+    """
+    Calculate wind stress components from magnitude and direction following CF conventions.
+
+    Parameters:
+    stress_magnitude (float or array): Wind stress magnitude
+    wind_direction_degrees (float or array): Wind direction in degrees (clockwise from north),
+        direction wind is coming FROM (Vaisala WXT convention).
+
+    Returns:
+    tuple: (surface_downward_eastward_stress, surface_downward_northward_stress)
+    """
+    theta = np.radians(wind_direction_degrees)
+    tau_x = -1 * stress_magnitude * np.sin(theta)
+    tau_y = -1 * stress_magnitude * np.cos(theta)
+    return tau_x, tau_y
+
 #------------------------------------------------------------------------------
     
 def psit_26(zeta = None): 
