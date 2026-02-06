@@ -1,4 +1,4 @@
-# pycoare
+# uop-coare
 
 Python package for COARE 3.6 bulk air-sea flux calculations (no warm layer computations).
 
