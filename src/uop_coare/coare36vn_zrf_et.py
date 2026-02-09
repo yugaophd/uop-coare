@@ -22,44 +22,10 @@ List of functions in this code are:
     'qsat26sea']
 
 previous versin by ludovic Bariteau, CU/CIRES, NOAA/ESRL/PSL, August 2022
-pycoare version v1 by Yu Gao and Tom Farrar, Feb 2026
+uop_coare version v1 by Yu Gao and Tom Farrar, Feb 2026
 """
 import numpy as np
 import os
-import datetime as _dt
-
-
-def _jd_from_datetime_like(jd):
-    arr = np.asarray(jd)
-    if arr.dtype.kind == "M":
-        days = arr.astype("datetime64[D]")
-        years = arr.astype("datetime64[Y]")
-        day_of_year = (days - years).astype("timedelta64[D]").astype(float) + 1.0
-        frac = (arr - days).astype("timedelta64[ns]").astype(float) / (24.0 * 3600.0 * 1e9)
-        return day_of_year + frac
-    if arr.dtype.kind == "O":
-        flat = arr.reshape(-1)
-        if flat.size == 0:
-            return None
-        if not isinstance(flat[0], (_dt.datetime, _dt.date)):
-            return None
-        jd_vals = np.empty(flat.size, dtype=float)
-        for i, dt_val in enumerate(flat):
-            if isinstance(dt_val, _dt.datetime):
-                if dt_val.tzinfo is not None:
-                    dt_val = dt_val.astimezone(_dt.timezone.utc).replace(tzinfo=None)
-            else:
-                dt_val = _dt.datetime(dt_val.year, dt_val.month, dt_val.day)
-            day_of_year = dt_val.timetuple().tm_yday
-            frac = (
-                dt_val.hour / 24.0
-                + dt_val.minute / 1440.0
-                + dt_val.second / 86400.0
-                + dt_val.microsecond / 8.64e10
-            )
-            jd_vals[i] = day_of_year + frac
-        return jd_vals.reshape(arr.shape)
-    return None
     
 def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi,rain, Ss, cp=None, sigH=None, zrf_u=10.0, zrf_t=10.0, zrf_q=10.0, coolskin=True, albedo='constant', return_albedo=False, wind_direction=None):   
 #**************************************************************************
@@ -96,6 +62,18 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
     jcoolx = 1
     if not coolskin:
         jcoolx = 0
+
+    # Normalize albedo option to accepted strings.
+    if isinstance(albedo, bool):
+        albedo = "constant" if albedo else "Payne1972"
+    elif albedo is None:
+        albedo = "constant"
+    elif isinstance(albedo, str):
+        key = albedo.strip().lower()
+        if key in {"payne1972", "payne_1972", "payne-1972", "payne"}:
+            albedo = "Payne1972"
+        elif key in {"constant", "const"}:
+            albedo = "constant"
 #**************************************************************************
 ### INPUTS:
     
@@ -132,7 +110,6 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
 #  lon = longitude defined positive to east, if using other version,
 #             adjust the eorw string input to albedo_vector function
 #  jd = year day or julian day, where day Jan 1 00:00 UTC = 0
-#       also accepts datetime-like inputs (UTC) and computes yearday internally
 #  zi = PBL height (m) (default or typical value = 600m)
 #  rain = rain rate (mm/hr)
 #  Ss = sea surface salinity (PSU)
@@ -143,6 +120,7 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
 #  coolskin = True to run cool-skin model, False to disable (default True)
 #  albedo = 'constant' to use constant albedo correction (default),
 #           'Payne1972' to use zenith-angle varying albedo from Payne (1972)
+#           also accepts bool: True -> 'constant', False -> 'Payne1972'
 #  return_albedo = False to keep legacy output shape; True to append
 #           alb, T_sw, solarmax_sw, psi_sw to the output array
 #  wind_direction = wind direction in degrees from which the wind is coming
@@ -296,10 +274,6 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
     # if inputs are already ndarray float this does nothing
     # otherwise copies are created in the local namespace
     # .flatten() return a 1D version in case single value input is already an array (array([[]]) vs array([]))
-    jd_from_dt = _jd_from_datetime_like(jd)
-    if jd_from_dt is not None:
-        jd = jd_from_dt
-
     if u.size ==1 and t.size ==1: 
         u = np.copy(np.asarray([u], dtype=float)).flatten()
         zu = np.copy(np.asarray([zu], dtype=float)).flatten()
@@ -815,6 +789,8 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
     out = np.array([usr,tau,hsb,hlb,hbb,hsbb,hlwebb,tsr,qsr,zo,zot,zoq,Cd,Ch,Ce,L,zeta,dT_skinx,dq_skinx,dz_skin,Urf,Trf,Qrf,RHrf,UrfN,TrfN,QrfN,lw_net,sw_net,Le,rhoa,UN,U10,U10N,Cdn_10,Chn_10,Cen_10,hrain,Qs,Evap,T10,T10N,Q10,Q10N,RH10,P10,rhoa10,gust,wc_frac,Edis,tau_x,tau_y])
     #                1   2   3   4   5   6    7      8   9  10  11  12 13 14 15 16  17   18       19        20    21  22  23  24   25   26   27     28    29   30  31  32 33   34    35     36    37      38  39  40   41  42   43   44   45  46   47    48     49    50  51  52
     # optional (if return_albedo=True): 53=alb, 54=T_sw, 55=solarmax_sw, 56=psi_sw
+    ##### ALWAYS return albedo (either a constant or Payne1972) #####
+    ##### After testing, remove T_sw, solarmax_sw, psi_sw #####
     A = np.column_stack(out)
     if return_albedo:
         A = np.column_stack((A, alb, T_sw, solarmax_sw, psi_sw))

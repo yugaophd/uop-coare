@@ -10,7 +10,7 @@ src_path = os.path.join(repo_root, "src")
 if os.path.isdir(src_path) and src_path not in sys.path:
     sys.path.insert(0, src_path)
 
-from pycoare.coare36vn_zrf_et import albedo_vector, coare36vn_zrf_et
+from uop_coare.coare36vn_zrf_et import albedo_vector, coare36vn_zrf_et
 
 
 def _find_dataarray(ds, candidates):

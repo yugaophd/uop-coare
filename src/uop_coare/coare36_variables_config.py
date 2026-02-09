@@ -527,7 +527,7 @@ variables_info = {
     "albedo": {
         "units": "1",
         "standard_name": "surface_albedo",
-        "long_name": "shortwave albedo (Payne 1972 or constant)",
+        "long_name": "shortwave albedo",
         "coverage_content_type": "radiation",
         "valid_min": 0.0,
         "valid_max": 1.0
@@ -584,13 +584,12 @@ def get_variables_info(albedo_method=None):
     albedo_meta = info.get("albedo")
     if albedo_meta is None:
         return info
+    albedo_meta["long_name"] = "shortwave albedo"
     if method == "Payne1972":
-        albedo_meta["long_name"] = "shortwave albedo (Payne 1972)"
         albedo_meta["description"] = (
             "Computed with zenith-angle varying albedo from Payne (1972)."
         )
     else:
-        albedo_meta["long_name"] = "shortwave albedo (constant 0.055)"
         albedo_meta["description"] = (
             "Constant shortwave albedo of 0.055 (net factor 0.945)."
         )

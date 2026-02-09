@@ -2,7 +2,7 @@ import os
 
 import numpy as np
 
-from pycoare.coare36vn_zrf_et import albedo_vector, coare36vn_zrf_et
+from uop_coare.coare36vn_zrf_et import albedo_vector, coare36vn_zrf_et
 
 
 def _build_constant_inputs(sw_dn, lat, lon, jd):

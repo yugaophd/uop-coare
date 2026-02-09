@@ -29,7 +29,7 @@ pip install -U .
 ## Quick Start
 
 ```python
-from pycoare.coare36vn_zrf_et import coare36vn_zrf_et
+from uop_coare.coare36vn_zrf_et import coare36vn_zrf_et
 
 # Example call (replace with real data/arrays)
 A = coare36vn_zrf_et(
