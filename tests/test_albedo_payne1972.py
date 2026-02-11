@@ -1,4 +1,5 @@
 import os
+import pytest
 
 import numpy as np
 
@@ -235,3 +236,119 @@ def test_datetime_jd_input(l4_sample_arrays):
 
     valid = np.isfinite(sw_dn)
     assert np.allclose(alb_num[valid], alb_dt[valid], rtol=1e-6, atol=1e-6)
+
+
+def test_shortwave_time_offset_misalignment(l4_sample_arrays):
+    sw_dn, lat, lon, jd, time_da = l4_sample_arrays
+    if time_da is None:
+        pytest = __import__("pytest")
+        pytest.skip("Time coordinate required to apply a 6-hour offset.")
+
+    import pandas as pd
+    times = pd.to_datetime(time_da.values)
+    if times.size < 2:
+        pytest = __import__("pytest")
+        pytest.skip("Insufficient time samples to compute sampling interval.")
+
+    dt_hours = np.median(np.diff(times.values).astype("timedelta64[s]").astype(float) / 3600.0)
+    if not np.isfinite(dt_hours) or dt_hours <= 0:
+        pytest = __import__("pytest")
+        pytest.skip("Invalid sampling interval; cannot compute 6-hour offset.")
+
+    samples_per_hour = int(round(1.0 / dt_hours))
+    offset_n = int(round(6 * samples_per_hour))
+    window_n = int(round(60 * samples_per_hour))
+
+    if offset_n >= sw_dn.size:
+        pytest = __import__("pytest")
+        pytest.skip("Dataset too short to apply 6-hour offset.")
+
+    # Ensure we stay within bounds when slicing with the offset.
+    max_len = sw_dn.size - offset_n
+    N = min(window_n + 1, max_len)
+    if N < 10:
+        pytest = __import__("pytest")
+        pytest.skip("Not enough samples in 0–60h window after applying offset.")
+
+    # Hour 0–60: use original lat/lon/jd from start, but sw_dn from +6h.
+    sw_dn_offset = sw_dn[offset_n : offset_n + N]
+    lat_slice = lat[:N]
+    lon_slice = lon[:N]
+    jd_slice = jd[:N]
+
+    inputs = _build_constant_inputs(sw_dn_offset, lat_slice, lon_slice, jd_slice)
+
+    A = coare36vn_zrf_et(**inputs, albedo="Payne1972", return_albedo=True)
+
+    alb_out = A[:, -4]
+    sw_net_out = A[:, 28]
+
+    valid = np.isfinite(sw_dn_offset) & np.isfinite(alb_out)
+    assert np.allclose(
+        sw_net_out[valid], (1.0 - alb_out[valid]) * sw_dn_offset[valid], rtol=1e-6, atol=1e-6
+    )
+
+    # The intentional time offset should produce cases where albedo is substantial
+    # while shortwave is very small. Use dataset-relative thresholds for robustness.
+    sw_low_thresh = np.nanpercentile(sw_dn_offset[valid], 25)
+    alb_high_thresh = np.nanpercentile(alb_out[valid], 75)
+    mismatch = valid & (sw_dn_offset <= sw_low_thresh) & (alb_out >= alb_high_thresh)
+
+    # If percentiles degenerate (e.g., constant arrays), fall back to absolute thresholds.
+    if np.count_nonzero(mismatch) == 0:
+        mismatch = valid & (sw_dn_offset < 100.0) & (alb_out > 0.10)
+
+    assert np.count_nonzero(mismatch) > 0
+
+    if os.environ.get("PLOT_TESTS", "1") == "1":
+        import matplotlib.pyplot as plt
+
+        os.makedirs("tests/artifacts", exist_ok=True)
+
+        # Plot against local time for clarity.
+        lon_scalar = float(np.nanmedian(lon_slice))
+        lon_norm = ((lon_scalar + 180.0) % 360.0) - 180.0
+        lon_hours = lon_norm / 15.0
+        x = times[:N] + pd.to_timedelta(lon_hours, unit="h")
+
+        fig, ax1 = plt.subplots(figsize=(10, 4))
+        ax1.plot(x, alb_out, label="albedo", color="tab:blue")
+        ax1.set_ylabel("albedo", color="tab:blue")
+        ax1.tick_params(axis="y", labelcolor="tab:blue")
+
+        ax2 = ax1.twinx()
+        ax2.plot(x, sw_dn_offset, label="sw_dn (offset +6h)", color="tab:red", alpha=0.7)
+        ax2.set_ylabel("W/m^2", color="tab:red")
+        ax2.tick_params(axis="y", labelcolor="tab:red")
+
+        ax1.set_title("Albedo vs Shortwave (0–60h window, sw offset +6h)")
+        ax1.set_xlabel("local time")
+        ax1.grid(True, alpha=0.3)
+        fig.tight_layout()
+        fig.savefig("tests/artifacts/albedo_vs_sw_offset_0_60h.png", dpi=150)
+        plt.close(fig)
+
+
+def test_albedo_stop_triggers_with_bad_albedo(monkeypatch, l4_sample_arrays):
+    # Verify the sanity/error check raises when daytime has substantial shortwave
+    # but albedo is near-zero (contrived via monkeypatch).
+    sw_dn, lat, lon, jd, _time = l4_sample_arrays
+    N = sw_dn.size
+
+    def fake_albedo_vector(sw_dn_arg, jd_arg, lon_arg, lat_arg, eorw="E"):
+        # Positive solar altitude for all samples (daytime)
+        psi_sw = np.full(N, 30.0)
+        # Force near-zero albedo when shortwave is substantial
+        alb = np.where(sw_dn > 100.0, 0.0, 0.05).astype(float)
+        # Placeholder arrays for returned extras
+        T_sw = np.full(N, np.nan)
+        solarmax_sw = np.full(N, np.nan)
+        return alb, T_sw, solarmax_sw, psi_sw
+
+    # Patch the function used inside coare36 to produce the bad condition.
+    monkeypatch.setattr("uop_coare.coare36vn_zrf_et.albedo_vector", fake_albedo_vector)
+
+    inputs = _build_constant_inputs(sw_dn, lat, lon, jd)
+
+    with pytest.raises(ValueError, match="Albedo error:"):
+        coare36vn_zrf_et(**inputs, albedo="Payne1972", return_albedo=True)

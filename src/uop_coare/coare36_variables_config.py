@@ -533,32 +533,32 @@ variables_info = {
         "valid_max": 1.0
         },
 
-    "shortwave_transmittance": {
-        "units": "1",
-        "long_name": "shortwave transmission factor",
-        "description": "T_sw = min(2, sw_dn/solarmax_sw) from Payne (1972)",
-        "coverage_content_type": "radiation",
-        "valid_min": 0.0,
-        "valid_max": 2.0
-        },
+    # "shortwave_transmittance": {
+    #     "units": "1",
+    #     "long_name": "shortwave transmission factor",
+    #     "description": "T_sw = min(2, sw_dn/solarmax_sw) from Payne (1972)",
+    #     "coverage_content_type": "radiation",
+    #     "valid_min": 0.0,
+    #     "valid_max": 2.0
+    #     },
 
-    "solarmax_shortwave": {
-        "units": "W/m^2",
-        "long_name": "maximum shortwave radiation at top of atmosphere",
-        "description": "solarmax_sw from Payne (1972)",
-        "coverage_content_type": "radiation",
-        "valid_min": 0.0,
-        "valid_max": 2000.0
-        },
+    # "solarmax_shortwave": {
+    #     "units": "W/m^2",
+    #     "long_name": "maximum shortwave radiation at top of atmosphere",
+    #     "description": "solarmax_sw from Payne (1972)",
+    #     "coverage_content_type": "radiation",
+    #     "valid_min": 0.0,
+    #     "valid_max": 2000.0
+    #     },
 
-    "solar_altitude_angle": {
-        "units": "degrees",
-        "long_name": "solar altitude angle",
-        "description": "psi_sw from Payne (1972)",
-        "coverage_content_type": "auxiliaryInformation",
-        "valid_min": -90.0,
-        "valid_max": 90.0
-        },
+    # "solar_altitude_angle": {
+    #     "units": "degrees",
+    #     "long_name": "solar altitude angle",
+    #     "description": "psi_sw from Payne (1972)",
+    #     "coverage_content_type": "auxiliaryInformation",
+    #     "valid_min": -90.0,
+    #     "valid_max": 90.0
+    #     },
     }
 
 

@@ -26,6 +26,42 @@ uop_coare version v1 by Yu Gao and Tom Farrar, Feb 2026
 """
 import numpy as np
 import os
+from datetime import datetime
+
+def calculate_jd(time):
+    """
+    Compute fractional Julian day (day of year) for each timestamp.
+
+    Jan 1 00:00 UTC of a given year corresponds to 1.0
+    (matches common day-of-year convention and test fixtures).
+
+    Parameters:
+    - time: array-like of datetime-like values. Supports:
+      numpy datetime64 arrays, pandas DatetimeIndex/Series, lists/arrays of
+      Python datetime objects.
+
+    Returns:
+    - numpy.ndarray of floats representing fractional days since Jan 1 00:00.
+    """
+    # Prefer pandas for robust datetime64 handling if available
+    try:
+        import pandas as pd
+        py_datetimes = pd.DatetimeIndex(time).to_pydatetime()
+    except Exception:
+        arr = np.asarray(time)
+        # numpy datetime64 vector → Python datetime objects
+        if np.issubdtype(arr.dtype, np.datetime64):
+            py_datetimes = arr.astype('datetime64[ns]').astype('O')
+        else:
+            # Assume array of Python datetime objects
+            py_datetimes = arr
+
+    jd = np.array([
+        (dt - datetime(dt.year, 1, 1, tzinfo=getattr(dt, 'tzinfo', None))).total_seconds() / 86400.0 + 1.0
+        for dt in py_datetimes
+    ], dtype=float)
+
+    return jd
     
 def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi,rain, Ss, cp=None, sigH=None, zrf_u=10.0, zrf_t=10.0, zrf_q=10.0, coolskin=True, albedo='constant', return_albedo=False, wind_direction=None):   
 #**************************************************************************
@@ -297,6 +333,18 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
     
     N = np.size(u)
     jcool = jcoolx * np.ones(N)
+
+    # If `jd` is datetime-like, convert to fractional day-of-year internally
+    try:
+        jd_arr = np.asarray(jd)
+        is_datetime_like = np.issubdtype(jd_arr.dtype, np.datetime64) or (
+            jd_arr.dtype == object and jd_arr.size > 0 and hasattr(jd_arr[0], 'year')
+        )
+        if is_datetime_like:
+            jd = calculate_jd(jd)
+    except Exception:
+        # Leave jd unchanged if detection or conversion fails
+        pass
     
     if cp is not None and cp.size==1:
         cp = np.copy(np.asarray([cp], dtype=float)).flatten()
@@ -410,6 +458,17 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
         print("please provide albedo as 'constant' or 'Payne1972'")
         alb, T_sw, solarmax_sw, psi_sw = albedo_vector(sw_dn, jd, lon, lat, eorw='E')
         sw_net = np.multiply((1 - alb), sw_dn)
+    
+    # Sanity/error check (daytime only): shortwave should not be substantial with near-zero albedo
+    if albedo == 'Payne1972':
+        daytime = np.isfinite(psi_sw) & (psi_sw > 0)
+        bad_albedo_mask = np.isfinite(sw_dn) & np.isfinite(alb) & daytime & (sw_dn > 10.0) & (alb < 0.001)
+        if np.any(bad_albedo_mask):
+            count = int(np.count_nonzero(bad_albedo_mask))
+            raise ValueError(
+                f"Albedo error: {count} sample(s) have sw_dn > 10 W/m^2 while albedo < 0.001 (daytime). "
+                "Check time/jd, longitude sign (E/W), and albedo settings."
+            )
     
     ### net longwave aka IR aka infrared
     # initial value here is positive for cooling ocean in the calculations
@@ -790,9 +849,9 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
     #                1   2   3   4   5   6    7      8   9  10  11  12 13 14 15 16  17   18       19        20    21  22  23  24   25   26   27     28    29   30  31  32 33   34    35     36    37      38  39  40   41  42   43   44   45  46   47    48     49    50  51  52
     # optional (if return_albedo=True): 53=alb, 54=T_sw, 55=solarmax_sw, 56=psi_sw
     ##### ALWAYS return albedo (either a constant or Payne1972) #####
-    ##### After testing, remove T_sw, solarmax_sw, psi_sw #####
     A = np.column_stack(out)
     if return_albedo:
+        # Append albedo outputs (alb, T_sw, solarmax_sw, psi_sw)
         A = np.column_stack((A, alb, T_sw, solarmax_sw, psi_sw))
     return A
     
