@@ -587,7 +587,7 @@ def get_variables_info(albedo_method=None):
     albedo_meta["long_name"] = "shortwave albedo"
     if method == "Payne1972":
         albedo_meta["description"] = (
-            "Computed with zenith-angle varying albedo from Payne (1972)."
+            "Computed with zenith-angle varying albedo from Payne, R. E., 1972: Albedo of the Sea Surface. J. Atmos. Sci., 29, 959–970, https://doi.org/10.1175/1520-0469(1972)029<0959:AOTSS>2.0.CO;2."
         )
     else:
         albedo_meta["description"] = (
