@@ -62,8 +62,69 @@ def calculate_jd(time):
     ], dtype=float)
 
     return jd
+
+
+def _plot_shortwave_jd_diagnostics(sw_dn, jd, lon, plot_path="coare_sw_jd_diagnostic.png"):
+    """Save local-hour shortwave composite with histogram bars and a dot-line overlay."""
+    sw_dn = np.asarray(sw_dn, dtype=float).reshape(-1)
+    jd = np.asarray(jd, dtype=float).reshape(-1)
+    lon = np.asarray(lon, dtype=float).reshape(-1)
+    n = min(sw_dn.size, jd.size)
+    if n == 0:
+        return
+
+    sw_dn = sw_dn[:n]
+    jd = jd[:n]
+    if lon.size == 0:
+        return
+    if lon.size == 1:
+        lon_local = np.full(n, lon[0], dtype=float)
+    else:
+        lon_local = np.broadcast_to(lon, sw_dn.shape)[:n]
+
+    # Local hour = UTC hour + longitude/15 (deg east is positive).
+    hour_local = np.mod(np.mod(jd, 1.0) * 24.0 + lon_local / 15.0, 24.0)
+    valid = np.isfinite(sw_dn) & np.isfinite(hour_local)
+    if not np.any(valid):
+        return
+
+    hour_valid = hour_local[valid]
+    sw_valid = sw_dn[valid]
+
+    # Hourly diurnal composite of shortwave (00:00 to 24:00).
+    hour_bin_idx = np.floor(hour_valid).astype(int)
+    hour_bin_idx = np.clip(hour_bin_idx, 0, 23)
+    sw_hourly = np.full(24, np.nan)
+    for h in range(24):
+        hh = sw_valid[hour_bin_idx == h]
+        if hh.size > 0:
+            sw_hourly[h] = np.nanmean(hh)
+
+    # Always draw 24 bins. Missing-hour composites are shown as zero-height bars.
+    sw_hourly_plot = np.where(np.isfinite(sw_hourly), sw_hourly, 0.0)
+    has_data = np.isfinite(sw_hourly)
+
+    try:
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
+        x = np.arange(24)
+        bar_colors = np.where(has_data, "#2C7FB8", "#D9D9D9")
+        ax.bar(x, sw_hourly_plot, width=0.9, align="center", color=bar_colors, alpha=0.8)
+        ax.plot(x, sw_hourly, color="#D95F0E", marker="o", linewidth=1.6, markersize=4)
+        ax.set_title("Hourly Composite Shortwave Histogram")
+        ax.set_xlabel("Local hour")
+        ax.set_ylabel("Mean sw_dn (W/m^2)")
+        ax.set_xlim(-0.5, 23.5)
+        ax.set_xticks(np.arange(0, 24, 2))
+        ax.grid(axis="y", alpha=0.3)
+
+        fig.savefig(plot_path, dpi=150)
+        plt.close(fig)
+    except Exception as exc:
+        print(f"Warning: unable to generate diagnostic plot: {exc}")
     
-def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi,rain, Ss, cp=None, sigH=None, zrf_u=10.0, zrf_t=10.0, zrf_q=10.0, coolskin=True, albedo='constant', return_albedo=False, wind_direction=None):   
+def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi,rain, Ss, cp=None, sigH=None, zrf_u=10.0, zrf_t=10.0, zrf_q=10.0, coolskin=True, albedo='constant', return_albedo=False, wind_direction=None, payne_min_solar_elev_deg=2.0, auto_plot=True, auto_plot_path='coare_sw_jd_diagnostic.png'):   
 #**************************************************************************
 # VERSION INFO:
     
@@ -145,7 +206,7 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
 #  lat = latitude defined positive to north
 #  lon = longitude defined positive to east, if using other version,
 #             adjust the eorw string input to albedo_vector function
-#  jd = year day or julian day, where day Jan 1 00:00 UTC = 0
+#  jd = fractional day-of-year, where Jan 1 00:00 UTC = 1.0 in this implementation
 #  zi = PBL height (m) (default or typical value = 600m)
 #  rain = rain rate (mm/hr)
 #  Ss = sea surface salinity (PSU)
@@ -162,6 +223,11 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
 #  wind_direction = wind direction in degrees from which the wind is coming
 #           (clockwise from north, Vaisala WXT convention). Used to compute
 #           wind stress components; set to None to skip.
+#  payne_min_solar_elev_deg = minimum solar elevation angle (deg) required
+#           to apply Payne (1972) albedo to shortwave flux; for lower angles
+#           sw_net is masked to 0 to suppress night/twilight artifacts.
+#  auto_plot = True to save diagnostic shortwave/jd plots after each run
+#  auto_plot_path = output file path for diagnostic plot
     
 #**************************************************************************
 #### OUTPUTS: the user controls the output array A at the end of the code.
@@ -447,6 +513,13 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
     if albedo == 'Payne1972':
         alb, T_sw, solarmax_sw, psi_sw = albedo_vector(sw_dn, jd, lon, lat, eorw='E')
         sw_net = np.multiply((1 - alb), sw_dn)
+        # payne_daytime = (
+        #     np.isfinite(psi_sw)
+        #     & np.isfinite(sw_dn)
+        #     & (psi_sw >= payne_min_solar_elev_deg)
+        #     & (sw_dn > 0)
+        # )
+        # sw_net = np.where(payne_daytime, np.multiply((1 - alb), sw_dn), 0.0)
     elif albedo == 'constant':
         # *** for constant albedo:
         alb = 0.055 * np.ones(N)
@@ -461,14 +534,22 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
     
     # Sanity/error check (daytime only): shortwave should not be substantial with near-zero albedo
     if albedo == 'Payne1972':
-        daytime = np.isfinite(psi_sw) & (psi_sw > 0)
-        bad_albedo_mask = np.isfinite(sw_dn) & np.isfinite(alb) & daytime & (sw_dn > 10.0) & (alb < 0.001)
+        daytime = np.isfinite(psi_sw) & (psi_sw >= payne_min_solar_elev_deg)
+        bad_albedo_mask = np.isfinite(sw_dn) & np.isfinite(alb) & daytime & (sw_dn > 10.0) & (alb < 0.01)
         if np.any(bad_albedo_mask):
             count = int(np.count_nonzero(bad_albedo_mask))
             raise ValueError(
-                f"Albedo error: {count} sample(s) have sw_dn > 10 W/m^2 while albedo < 0.001 (daytime). "
+                f"Albedo error: {count} sample(s) have sw_dn > 10 W/m^2 while albedo < 0.01 "
+                f"(psi_sw >= {payne_min_solar_elev_deg} deg). "
                 "Check time/jd, longitude sign (E/W), and albedo settings."
             )
+
+    high_sw_high_albedo_mask = np.isfinite(sw_dn) & np.isfinite(alb) & (sw_dn > 500.0) & (alb > 0.1)
+    if np.any(high_sw_high_albedo_mask):
+        count = int(np.count_nonzero(high_sw_high_albedo_mask))
+        raise ValueError(
+            f"Albedo error: {count} sample(s) have sw_dn > 500 W/m^2 while albedo > 0.1."
+        )
     
     ### net longwave aka IR aka infrared
     # initial value here is positive for cooling ocean in the calculations
@@ -853,6 +934,10 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
     if return_albedo:
         # Append albedo outputs (alb, T_sw, solarmax_sw, psi_sw)
         A = np.column_stack((A, alb, T_sw, solarmax_sw, psi_sw))
+
+    if auto_plot:
+        _plot_shortwave_jd_diagnostics(sw_dn, jd, lon, plot_path=auto_plot_path)
+
     return A
     
 #------------------------------------------------------------------------------

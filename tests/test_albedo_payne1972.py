@@ -3,7 +3,7 @@ import pytest
 
 import numpy as np
 
-from uop_coare.coare36vn_zrf_et import albedo_vector, coare36vn_zrf_et
+from uop_coare.coare36vn_zrf_et import albedo_vector, calculate_jd, coare36vn_zrf_et
 
 
 def _build_constant_inputs(sw_dn, lat, lon, jd):
@@ -272,6 +272,9 @@ def test_shortwave_time_offset_misalignment(l4_sample_arrays):
 
     # Hour 0–60: use original lat/lon/jd from start, but sw_dn from +6h.
     sw_dn_offset = sw_dn[offset_n : offset_n + N]
+    # Keep this test focused on time/albedo misalignment behavior and avoid
+    # triggering the separate high-sw/high-albedo safety guard.
+    sw_dn_offset = np.minimum(sw_dn_offset, 500.0)
     lat_slice = lat[:N]
     lon_slice = lon[:N]
     jd_slice = jd[:N]
@@ -352,3 +355,27 @@ def test_albedo_stop_triggers_with_bad_albedo(monkeypatch, l4_sample_arrays):
 
     with pytest.raises(ValueError, match="Albedo error:"):
         coare36vn_zrf_et(**inputs, albedo="Payne1972", return_albedo=True)
+
+
+def test_longitude_plus_180_with_same_utc_jd_triggers_real_high_albedo_check():
+    # Use the real Payne 1972 albedo path with a UTC-derived jd. At 04:48 UTC,
+    # lon=0 is nighttime here, but lon+180 shifts local solar time by 12 hours.
+    # With unrealistically large sw_dn held fixed, the shifted longitude must trip
+    # the high shortwave / high albedo guard.
+    N = 4
+    sw_dn = np.full(N, 700.0)
+    lat = np.full(N, 45.0)
+    lon_base = np.full(N, 0.0)
+    lon_shifted = lon_base + 180.0
+    times = np.array(["2026-04-10T04:48:00"] * N, dtype="datetime64[s]")
+    jd = calculate_jd(times)
+
+    inputs_base = _build_constant_inputs(sw_dn, lat, lon_base, jd)
+    A_base = coare36vn_zrf_et(**inputs_base, albedo="Payne1972", return_albedo=True)
+    assert np.allclose(A_base[:, -4], 0.0, rtol=0.0, atol=0.0)
+
+    inputs_shifted = _build_constant_inputs(sw_dn, lat, lon_shifted, jd)
+    with pytest.raises(ValueError, match=r"sw_dn > 500 W/m\^2 while albedo > 0\.1"):
+        coare36vn_zrf_et(**inputs_shifted, albedo="Payne1972", return_albedo=True)
+
+
