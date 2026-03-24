@@ -6,8 +6,8 @@ variables_info = {
     # 1. friction velocity (usr)
     "friction_velocity": 
         {"units": "m/s", 
-        "standard_name": "friction_velocity",
-        "long_name": "friction velocity that includes gustiness",
+        "standard_name": "magnitude_of_surface_friction_velocity_in_air", #TOM
+        "long_name": "friction velocity that includes gustiness",#TOM
         "coverage_content_type": "physicalMeasurement",
         "valid_min": 0.0,
         "valid_max": 2.0
@@ -140,7 +140,7 @@ variables_info = {
     # 14. stanton number (Ch)
     "stanton_number": 
         {"units": "1", 
-        "standard_name": "surface_drag_coefficient_for_heat_in_air",
+        # "standard_name": "surface_drag_coefficient_for_heat_in_air",
         "long_name": "sensible heat transfer coefficient (Stanton number)",
         "coverage_content_type": "modelResult",
         "valid_min": 0.0,
@@ -150,7 +150,7 @@ variables_info = {
     # 15. dalton number (Ce)
     "dalton_number": 
         {"units": "1", 
-        "standard_name": "surface_drag_coefficient_for_humidity_in_air",
+        # "standard_name": "surface_drag_coefficient_for_humidity_in_air",
         "long_name": "latent heat transfer coefficient (Dalton number)",
         "coverage_content_type": "modelResult",
         "valid_min": 0.0,
@@ -301,10 +301,10 @@ variables_info = {
     # 30. latent heat of vaporization
     "latent_heat_of_vaporization": 
         {"units": "J/kg", 
-        "standard_name": "surface_latent_heat_flux_due_to_evaporation",
-        "long_name": "latent heat of vaporization",
-        "description": "positive when heating the ocean",
-        "reverse_sign": True,
+        # "standard_name": "surface_latent_heat_flux_due_to_evaporation",
+        "long_name": "latent heat of vaporization is the amount of heat required to evaporate 1 kg of water",
+        # "description": "positive when heating the ocean",  #TOM
+        # "reverse_sign": True,
         "coverage_content_type": "physicalMeasurement",
         "valid_min": 2.0e6,
         "valid_max": 2.5e6
@@ -363,7 +363,7 @@ variables_info = {
     # 36. stanton number at 10 m
     "neutral_stanton_number_10_meters": 
         {"units": "1",
-         "standard_name": "surface_drag_coefficient_for_heat_in_air",
+        #  "standard_name": "surface_drag_coefficient_for_heat_in_air",
          "long_name": "neutral value of Stanton number at 10m",
          "coverage_content_type": "modelResult",
          "valid_min": 0.0,
@@ -373,7 +373,7 @@ variables_info = {
     # 37. dalton number at 10 m
     "neutral_dalton_number_10_meters": 
         {"units": "1", 
-        "standard_name": "surface_drag_coefficient_for_humidity_in_air",
+        # "standard_name": "surface_drag_coefficient_for_humidity_in_air",
         "long_name": "neutral value of Dalton number at 10m",
         "coverage_content_type": "modelResult",
         "valid_min": 0.0,
@@ -383,7 +383,7 @@ variables_info = {
     # 38. Rain heat flux
     "rain_heat_flux": 
         {"units": "W/m^2", 
-         "standard_name": "heat_flux_into_sea_water_due_to_rainfall",
+         "standard_name": "temperature_flux_due_to_rainfall_expressed_as_heat_flux_into_sea_water",  #TOM
         "long_name": "rain heat flux",
         "description": "positive when rain heats the ocean",
         "reverse_sign": True,
@@ -459,7 +459,7 @@ variables_info = {
         },
     
     "air_pressure_10_meters": 
-        {"units": "mb", 
+        {"units": "mbar", 
         "standard_name": "air_pressure",
         "long_name": "air pressure at 10m",
         "coverage_content_type": "physicalMeasurement",
@@ -488,15 +488,15 @@ variables_info = {
     "whitecap_fraction": {
         "units": "1", 
         "long_name": "whitecap fraction",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 1.0
         },
 
     "dissipated_energy": {  # Changed name from dissipated_energy to energy_dissipation
-        "units": "W/m^2", 
+        "units": "W/m^2",  # #TOM
         "long_name": "energy dissipation by wave breaking",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 1000.0
         },
