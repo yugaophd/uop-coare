@@ -544,12 +544,13 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
                 "Check time/jd, longitude sign (E/W), and albedo settings."
             )
 
-    # high_sw_high_albedo_mask = np.isfinite(sw_dn) & np.isfinite(alb) & (sw_dn > 500.0) & (alb > 0.1)
-    # if np.any(high_sw_high_albedo_mask):
-        # count = int(np.count_nonzero(high_sw_high_albedo_mask))
-        # raise ValueError(
-            # f"Albedo error: {count} sample(s) have sw_dn > 500 W/m^2 while albedo > 0.1."
-        # )
+        high_sw_high_albedo_mask = np.isfinite(sw_dn) & np.isfinite(alb) & (sw_dn > 500.0) & (alb > 0.1)
+        if np.any(high_sw_high_albedo_mask):
+            count = int(np.count_nonzero(high_sw_high_albedo_mask))
+            raise ValueError(
+                f"Albedo error: {count} sample(s) have sw_dn > 500 W/m^2 while albedo > 0.1. "
+                "Check time/jd, longitude sign (E/W), and albedo settings."
+            )
     
     ### net longwave aka IR aka infrared
     # initial value here is positive for cooling ocean in the calculations
