@@ -24,3 +24,7 @@ tests/artifacts/
 
 # OS
 .DS_Store
+
+# Scratch / local copies
+L4_00_fluxes_coare36.py
+*.png

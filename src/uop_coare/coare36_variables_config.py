@@ -8,7 +8,7 @@ variables_info = {
         {"units": "m/s", 
         "standard_name": "magnitude_of_surface_friction_velocity_in_air", #TOM
         "long_name": "friction velocity that includes gustiness",#TOM
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 2.0
         },
@@ -17,7 +17,7 @@ variables_info = {
     "wind_stress": {"units": "N/m^2", 
                     "standard_name": "magnitude_of_surface_downward_stress",
                     "long_name": "wind stress magnitude",
-                    "coverage_content_type": "physicalMeasurement",
+                    "coverage_content_type": "modelResult",
                     "valid_min": 0.0,
                     "valid_max": 5.0
                     },
@@ -28,7 +28,7 @@ variables_info = {
         "standard_name": "surface_downward_sensible_heat_flux",
         "long_name": "Sensible heat flux, positive when heating the ocean",
         "reverse_sign": True,
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": -500.0,
         "valid_max": 500.0
     }, 
@@ -39,21 +39,21 @@ variables_info = {
         "standard_name": "surface_downward_latent_heat_flux",
         "long_name": "Latent heat flux, positive when heating the ocean",
         "reverse_sign": True,
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": -1000.0,
         "valid_max": 500.0
     },
     
     # 5. Atmospheric Buoyancy Flux (hbb)
     "atmospheric_buoyancy_flux": 
-        {"units": "m^2/s^3", 
+        {"units": "W/m^2", 
         "standard_name": "surface_buoyancy_flux_into_air",
         "long_name": "atmospheric buoyancy flux",
         "description": "positive when sensible and latent heat fluxes heat the ocean",
         "reverse_sign": True,
-        "coverage_content_type": "physicalMeasurement",
-        "valid_min": -0.01,
-        "valid_max": 0.01
+        "coverage_content_type": "modelResult",
+        "valid_min": -500.0,
+        "valid_max": 500.0
         },
     
     # 6. Atmospheric Buoyancy Flux from Sonic (hsbb)
@@ -62,7 +62,7 @@ variables_info = {
         "long_name": "atmospheric buoyancy flux from sonic",
         "description": "positive when sensible and latent heat fluxes heat the ocean",
         "reverse_sign": True,
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": -500.0,
         "valid_max": 500.0
         },
@@ -73,7 +73,7 @@ variables_info = {
         "long_name": "Webb correction for latent heat flux",
         'description': "positive when heating the ocean",
         "reverse_sign": True,
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": -100.0,
         "valid_max": 100.0
         },
@@ -102,7 +102,7 @@ variables_info = {
         {"units": "m", 
         "standard_name": "surface_roughness_length_for_momentum_in_air",
         "long_name": "momentum roughness length",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 0.1
         },
@@ -112,7 +112,7 @@ variables_info = {
         {"units": "m", 
         "standard_name": "surface_roughness_length_for_heat_in_air",
         "long_name": "thermal roughness length",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 0.1
         },
@@ -122,7 +122,7 @@ variables_info = {
         {"units": "m", 
         "standard_name": "surface_roughness_length_for_humidity_in_air",
         "long_name": "moisture roughness length",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 0.1
         },
@@ -162,7 +162,7 @@ variables_info = {
         {"units": "m", 
         "standard_name": "atmosphere_boundary_layer_thickness",
         "long_name": "Monin-Obukhov length scale",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": -1000.0,
         "valid_max": 1000.0
         },
@@ -171,7 +171,7 @@ variables_info = {
     "stability_parameter": 
         {"units": "1", 
         "long_name": "Monin-Obukhov stability parameter zu/L",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": -10.0,
         "valid_max": 10.0
         },
@@ -183,7 +183,7 @@ variables_info = {
          "long_name": "cool-skin temperature depression",
          "description": "temperature difference between subskin and skin. negative value means skin is cooler than subskin",
         "reverse_sign": True,
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": -2.0,
         "valid_max": 2.0
         },
@@ -194,7 +194,7 @@ variables_info = {
         "long_name": "cool-skin humidity difference",
         "description": "humidity difference between subskin and skin. negative value means skin has lower humidity",
         "reverse_sign": True,
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": -2.0,
         "valid_max": 2.0
         },
@@ -203,7 +203,7 @@ variables_info = {
     "skin_thickness": {
         "units": "m", 
         "long_name": "cool-skin thickness",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 0.01
         },
@@ -213,7 +213,7 @@ variables_info = {
         "units": "m/s", 
         "standard_name": "wind_speed",
         "long_name": f"wind speed at {reference_height} m",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 50.0
         },
@@ -223,7 +223,7 @@ variables_info = {
         "units": "degC", 
         "standard_name": "air_temperature",
         "long_name": f"air temperature at {reference_height} meters",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": -10.0,
         "valid_max": 40.0
         },
@@ -233,7 +233,7 @@ variables_info = {
         "units": "g/kg", 
         "standard_name": "specific_humidity",
         "long_name": f"air specific humidity at {reference_height} meters",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 30.0
         },
@@ -243,7 +243,7 @@ variables_info = {
         "units": "%", 
         "standard_name": "relative_humidity",
         "long_name": f"air relative humidity at {reference_height} meters",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 100.0
         },
@@ -253,7 +253,7 @@ variables_info = {
         "units": "m/s", 
         "standard_name": "wind_speed",
         "long_name": f"neutral wind speed at {reference_height} meters",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 50.0
         },
@@ -263,7 +263,7 @@ variables_info = {
         "units": "degC", 
         "standard_name": "air_temperature",
         "long_name": f"neutral value of air temperature at {reference_height} meters",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": -10.0,
         "valid_max": 40.0
         },
@@ -273,7 +273,7 @@ variables_info = {
         "units": "g/kg", 
         "standard_name": "specific_humidity",
         "long_name": f"neutral value of air specific humidity at {reference_height} meters",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 30.0
         },
@@ -305,7 +305,7 @@ variables_info = {
         "long_name": "latent heat of vaporization is the amount of heat required to evaporate 1 kg of water",
         # "description": "positive when heating the ocean",  #TOM
         # "reverse_sign": True,
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 2.0e6,
         "valid_max": 2.5e6
         },
@@ -315,7 +315,7 @@ variables_info = {
         "units": "kg/m^3", 
         "standard_name": "air_density",
         "long_name": "density of air at reference height",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 1.0,
         "valid_max": 1.5
         },
@@ -325,7 +325,7 @@ variables_info = {
         {"units": "m/s", 
         "standard_name": "wind_speed",
         "long_name": "neutral value of wind speed at zu",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 50.0
         },
@@ -335,7 +335,7 @@ variables_info = {
         "units": "m/s",
         "standard_name": "wind_speed",
         "long_name": "wind speed adjusted to 10 m",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 50.0
         },
@@ -345,7 +345,7 @@ variables_info = {
         {"units": "m/s", 
         "standard_name": "wind_speed",
         "long_name": "neutral value of wind speed at 10 m",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 50.0
         },
@@ -387,7 +387,7 @@ variables_info = {
         "long_name": "rain heat flux",
         "description": "positive when rain heats the ocean",
         "reverse_sign": True,
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": -100.0,
         "valid_max": 100.0
         },
@@ -397,7 +397,7 @@ variables_info = {
         "units": "g/kg", 
         "standard_name": "surface_specific_humidity",
         "long_name": "sea surface specific humidity, assuming saturation",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 30.0
         },
@@ -407,7 +407,7 @@ variables_info = {
         {"units": "mm/h", 
          "standard_name": "lwe_water_evaporation_rate",
         "long_name": "evaporation rate",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 10.0
         },
@@ -417,7 +417,7 @@ variables_info = {
         {"units": "degC", 
         "standard_name": "air_temperature",
         "long_name": "air temperature at 10m",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": -10.0,
         "valid_max": 40.0
         },
@@ -426,7 +426,7 @@ variables_info = {
         {"units": "degC", 
         "standard_name": "air_temperature",
         "long_name": "neutral air temperature at 10m",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": -10.0,
         "valid_max": 40.0
         },
@@ -435,7 +435,7 @@ variables_info = {
         {"units": "g/kg", 
         "standard_name": "specific_humidity",
         "long_name": "air specific humidity at 10m",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 30.0
         },
@@ -444,7 +444,7 @@ variables_info = {
         {"units": "g/kg", 
         "standard_name": "specific_humidity",
         "long_name": "neutral air specific humidity at 10m",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 30.0
         },
@@ -453,7 +453,7 @@ variables_info = {
         {"units": "%", 
         "standard_name": "relative_humidity",
         "long_name": "air relative humidity at 10m",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 100.0
         },
@@ -462,7 +462,7 @@ variables_info = {
         {"units": "mbar", 
         "standard_name": "air_pressure",
         "long_name": "air pressure at 10m",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 900.0,
         "valid_max": 1100.0
         },
@@ -471,7 +471,7 @@ variables_info = {
         {"units": "kg/m^3", 
         "standard_name": "air_density",
         "long_name": "air density at 10m",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 1.0,
         "valid_max": 1.5
         },
@@ -480,7 +480,7 @@ variables_info = {
         "units": "m/s", 
         "standard_name": "wind_speed_of_gust",
         "long_name": "gustiness velocity",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 10.0
         },
@@ -506,7 +506,7 @@ variables_info = {
         "units": "N/m^2", 
         "standard_name": "surface_downward_eastward_stress",
         "long_name": "eastward wind stress component",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "description": "Eastward component of wind stress. Positive values indicate stress acting towards the east",
         "valid_min": -5.0,
         "valid_max": 5.0
@@ -517,7 +517,7 @@ variables_info = {
         "units": "N/m^2", 
         "standard_name": "surface_downward_northward_stress",
         "long_name": "northward wind stress component",
-        "coverage_content_type": "physicalMeasurement",
+        "coverage_content_type": "modelResult",
         "description": "Northward component of surface wind stress. Positive values indicate stress acting towards the north",
         "valid_min": -5.0,
         "valid_max": 5.0
