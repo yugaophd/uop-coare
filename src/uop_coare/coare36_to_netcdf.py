@@ -128,7 +128,96 @@ def coare36_to_netcdf(
     """
     Run COARE 3.6 and export outputs directly to a NetCDF file.
 
-    Returns the in-memory xarray Dataset after writing to disk.
+    Calls ``coare36vn_zrf_et`` with the supplied meteorological inputs,
+    maps every output column to a named xarray variable (with CF-compliant
+    attributes from ``get_variables_info``), optionally copies instrument
+    metadata and original L3 inputs from a source dataset, writes the
+    assembled dataset to a NetCDF file at ``output_path``, and returns the
+    in-memory ``xr.Dataset``.
+
+    Parameters
+    ----------
+    - output_path: destination path for the NetCDF file. Parent directories
+      are created automatically if they do not exist.
+    - global_attrs_json: path to a JSON file whose top-level keys are merged
+      into the dataset's global attributes (highest priority, overrides
+      base and source attributes).
+
+    Required meteorological inputs (keyword-only):
+    - u: wind speed (m/s); 1-D array-like of length N.
+    - zu: height of the wind measurement (m); scalar or 1-D array.
+    - t: air temperature (degC); 1-D array-like of length N.
+    - zt: height of the air-temperature measurement (m); scalar or 1-D array.
+    - rh: relative humidity (%); 1-D array-like of length N.
+    - zq: height of the humidity measurement (m); scalar or 1-D array.
+    - P: surface atmospheric pressure (mb); 1-D array-like of length N.
+    - ts: sea surface (skin) temperature (degC); 1-D array-like of length N.
+    - sw_dn: downwelling shortwave radiation (W/m²); 1-D array-like of length N.
+    - lw_dn: downwelling longwave radiation (W/m²); 1-D array-like of length N.
+    - lat: latitude (degrees north); scalar or 1-D array-like.
+    - lon: longitude (degrees east); scalar or 1-D array-like.
+    - jd: fractional Julian day of year (e.g. output of ``calculate_jd``);
+      1-D array-like of length N.
+    - zi: boundary layer height (m); scalar or 1-D array-like.
+    - rain: rainfall rate (mm/hr); 1-D array-like of length N.
+    - Ss: sea surface salinity (PSU); scalar or 1-D array-like.
+
+    Optional COARE solver inputs (keyword-only):
+    - cp: phase speed of dominant ocean swell (m/s); pass ``None`` to omit
+      wave-state correction. Default ``None``.
+    - sigH: significant wave height (m); pass ``None`` to omit. Default ``None``.
+    - zrf_u: reference height for output wind speed (m). Default 10.0.
+    - zrf_t: reference height for output air temperature (m). Default 10.0.
+    - zrf_q: reference height for output specific humidity (m). Default 10.0.
+    - coolskin: when ``True`` (default) enable the cool-skin parameterisation
+      (jcoolx = 1 in the original MATLAB code).
+    - albedo: surface albedo method. ``"constant"`` uses a fixed value;
+      ``"Payne1972"`` computes solar-elevation-dependent albedo. Default
+      ``"constant"``.
+    - wind_direction: meteorological wind direction (degrees clockwise from
+      north); only used when ``current_available`` is True. Default ``None``.
+    - payne_min_solar_elev_deg: minimum solar elevation angle (degrees) below
+      which the Payne 1972 albedo lookup returns a floor value. Only used
+      when ``albedo="Payne1972"``. Default 2.0.
+    - auto_plot: when ``True``, the solver produces diagnostic plots. Default
+      ``False``.
+
+    Dataset construction options (keyword-only):
+    - source_dataset: optional xarray Dataset whose variables will be
+      inspected for instrument metadata (prefix ``instrument_prefix``) and
+      input variables listed in ``input_vars_used``. Default ``None``.
+    - instrument_prefix: prefix used to identify instrument-metadata variables
+      in ``source_dataset`` that should be copied to the output. Default
+      ``"INST_"``.
+    - input_vars_used: mapping of ``{output_name: source_variable_name}`` that
+      selects 1-D variables from ``source_dataset`` to include in the output
+      dataset with an ``"L3_"``-prefixed name and provenance attributes.
+      Default ``None``.
+    - sea_water_temperature: optional array-like of sea-water temperature
+      values (length N) to include as the variable ``"L3_sea_water_temperature"``.
+      Default ``None``.
+    - sea_water_temperature_attrs: additional CF attributes (e.g. ``units``,
+      ``long_name``, ``standard_name``) for the ``"L3_sea_water_temperature"``
+      variable. Keys not provided fall back to sensible defaults. Default
+      ``None``.
+    - instrument_config: mapping of ``{role: instrument_name}`` added to the
+      global attributes as ``instrument_<role>``. Default ``None``.
+    - current_available: when ``True``, annotates ``"L3_wind_direction"`` and
+      ``"L3_wind_speed"`` as being relative to the surface current. Default
+      ``False``.
+    - output_dim: name of the output dimension (e.g. ``"time"``). Default
+      ``"time"``.
+    - output_coord: coordinate values for ``output_dim``; must have length N.
+      When ``None`` an integer range ``0…N-1`` is used. Default ``None``.
+    - dataset_attrs: extra global attributes merged last (after
+      ``global_attrs_json``). Default ``None``.
+    - to_netcdf_kwargs: additional keyword arguments forwarded verbatim to
+      ``xr.Dataset.to_netcdf``. Default ``None``.
+
+    Returns
+    -------
+    - xr.Dataset: the assembled dataset (same object written to disk), with
+      CF-compliant variable attributes and global metadata.
     """
     # Step 1: load required custom global attributes from JSON.
     custom_global_attrs = _load_global_attrs_json(global_attrs_json)
