@@ -51,13 +51,50 @@ def _as_float_attr(value: Any, name: str) -> float:
 def _add_instrument_variables(
     ds_out: xr.Dataset,
     source_dataset: Optional[xr.Dataset],
-    instrument_prefix: str,
+    instrument_prefix: str | Iterable[str],
 ) -> None:
     if source_dataset is None:
         return
+    prefixes = _normalize_prefixes(instrument_prefix)
     for var_name in source_dataset.data_vars:
-        if var_name.startswith(instrument_prefix):
+        if var_name.startswith(prefixes):
             ds_out[var_name] = source_dataset[var_name].copy(deep=True)
+
+
+def _normalize_prefixes(prefixes: str | Iterable[str]) -> tuple[str, ...]:
+    if isinstance(prefixes, str):
+        return (prefixes,)
+    return tuple(prefix for prefix in prefixes if isinstance(prefix, str) and prefix)
+
+
+def _build_l3_dataarray(
+    values: Any,
+    n_rows: int,
+    output_dim: str,
+    *,
+    source_name: str,
+    fallback_long_name: str,
+    source_var: Optional[xr.DataArray] = None,
+) -> Optional[xr.DataArray]:
+    data = np.asarray(values.values if hasattr(values, "values") else values)
+    if data.ndim == 0:
+        data = np.full(n_rows, data.item())
+    if data.ndim != 1 or data.size != n_rows:
+        return None
+
+    attrs = {
+        "units": source_var.attrs.get("units", "") if source_var is not None else "",
+        "long_name": f"L3 input: {source_var.attrs.get('long_name', fallback_long_name) if source_var is not None else fallback_long_name}",
+        "coverage_content_type": (
+            source_var.attrs.get("coverage_content_type", "physicalMeasurement")
+            if source_var is not None
+            else "physicalMeasurement"
+        ),
+        "standard_name": source_var.attrs.get("standard_name", "") if source_var is not None else "",
+        "description": f"COARE wrapper input variable: {source_name}",
+        "source_variable": source_var.name if source_var is not None and source_var.name is not None else source_name,
+    }
+    return xr.DataArray(data, dims=(output_dim,), attrs=attrs)
 
 
 def _sanitize_netcdf_attrs(attrs: Dict[str, Any]) -> Dict[str, Any]:
@@ -113,7 +150,7 @@ def coare36_to_netcdf(
     wind_direction=None,
     payne_min_solar_elev_deg: float = 2.0,
     source_dataset: Optional[xr.Dataset] = None,
-    instrument_prefix: str = "INST_",
+    instrument_prefix: str | Iterable[str] = "INST_",
     input_vars_used: Optional[Dict[str, str]] = None,
     sea_water_temperature: Optional[Any] = None,
     sea_water_temperature_attrs: Optional[Dict[str, Any]] = None,
@@ -185,14 +222,13 @@ def coare36_to_netcdf(
     Dataset construction options (keyword-only):
     - source_dataset: optional xarray Dataset whose variables will be
       inspected for instrument metadata (prefix ``instrument_prefix``) and
-      input variables listed in ``input_vars_used``. Default ``None``.
-    - instrument_prefix: prefix used to identify instrument-metadata variables
-      in ``source_dataset`` that should be copied to the output. Default
-      ``"INST_"``.
-    - input_vars_used: mapping of ``{output_name: source_variable_name}`` that
-      selects 1-D variables from ``source_dataset`` to include in the output
-      dataset with an ``"L3_"``-prefixed name and provenance attributes.
-      Default ``None``.
+      as a metadata source for preserved wrapper inputs. Default ``None``.
+    - instrument_prefix: prefix or prefixes used to identify instrument-
+      metadata variables in ``source_dataset`` that should be copied to the
+      output. Default ``"INST_"``.
+    - input_vars_used: optional mapping of ``{output_name: source_variable_name}``
+      for adding additional 1-D variables from ``source_dataset`` to the output
+      dataset with provenance attributes. Default ``None``.
     - sea_water_temperature: optional array-like of sea-water temperature
       values (length N) to include as the variable ``"L3_sea_water_temperature"``.
       Default ``None``.
@@ -297,31 +333,61 @@ def coare36_to_netcdf(
     # Step 6: append instrument scalar variables from source dataset (INST_*).
     _add_instrument_variables(ds, source_dataset, instrument_prefix)
 
-    # Step 7: append original input variables if requested by mapping.
+    # Step 7: append original wrapper inputs as L3_* variables.
+    preserved_inputs = {
+        "L3_wind_speed": (u, "wind speed", "u"),
+        "L3_air_temperature": (t, "air temperature", "t"),
+        "L3_relative_humidity": (rh, "relative humidity", "rh"),
+        "L3_air_pressure": (P, "air pressure", "P"),
+        "L3_sea_surface_skin_temperature": (ts, "sea surface skin temperature", "ts"),
+        "L3_downwelling_shortwave_flux": (sw_dn, "downwelling shortwave radiation", "sw_dn"),
+        "L3_downwelling_longwave_flux": (lw_dn, "downwelling longwave radiation", "lw_dn"),
+        "L3_latitude": (lat_arr, "latitude", "lat"),
+        "L3_longitude": (lon_arr, "longitude", "lon"),
+        "L3_julian_day": (jd, "fractional julian day", "jd"),
+        "L3_boundary_layer_height": (zi, "boundary layer height", "zi"),
+        "L3_rain_rate": (rain, "rainfall rate", "rain"),
+        "L3_sea_surface_salinity": (Ss, "sea surface salinity", "Ss"),
+    }
+    optional_inputs = {
+        "L3_wave_phase_speed": (cp, "wave phase speed", "cp"),
+        "L3_significant_wave_height": (sigH, "significant wave height", "sigH"),
+        "L3_wind_direction": (wind_direction, "wind direction", "wind_direction"),
+    }
+    preserved_inputs.update({name: spec for name, spec in optional_inputs.items() if spec[0] is not None})
+
+    for output_name, (values, fallback_long_name, source_name) in preserved_inputs.items():
+        source_var = None
+        if source_dataset is not None and source_name in source_dataset:
+            source_var = source_dataset[source_name]
+        data_array = _build_l3_dataarray(
+            values,
+            n_rows,
+            output_dim,
+            source_name=source_name,
+            fallback_long_name=fallback_long_name,
+            source_var=source_var,
+        )
+        if data_array is not None:
+            ds[output_name] = data_array
+
+    # Step 8: append additional source variables if requested by mapping.
     if source_dataset is not None and input_vars_used:
         for output_name, input_var in input_vars_used.items():
             if input_var not in source_dataset:
                 continue
-            src = source_dataset[input_var]
-            src_vals = np.asarray(src.values)
-            if src_vals.ndim != 1:
-                continue
-            if src_vals.size != n_rows:
-                continue
-            ds[output_name] = xr.DataArray(
-                src_vals,
-                dims=(output_dim,),
-                attrs={
-                    "units": src.attrs.get("units", ""),
-                    "long_name": f"L3 input: {src.attrs.get('long_name', input_var)}",
-                    "coverage_content_type": src.attrs.get("coverage_content_type", "physicalMeasurement"),
-                    "standard_name": src.attrs.get("standard_name", ""),
-                    "description": f"Original L3 input variable: {input_var}",
-                    "source_variable": input_var,
-                },
+            data_array = _build_l3_dataarray(
+                source_dataset[input_var],
+                n_rows,
+                output_dim,
+                source_name=input_var,
+                fallback_long_name=input_var,
+                source_var=source_dataset[input_var],
             )
+            if data_array is not None:
+                ds[output_name] = data_array
 
-    # Step 8: optionally append sea-water temperature input variable.
+    # Step 9: optionally append sea-water temperature input variable.
     if sea_water_temperature is not None:
         ts_vals = np.asarray(sea_water_temperature, dtype=float)
         if ts_vals.ndim == 0:
@@ -341,14 +407,14 @@ def coare36_to_netcdf(
                 },
             )
 
-    # Step 9: add optional comments when relative wind/current path was used.
+    # Step 10: add optional comments when relative wind/current path was used.
     if current_available:
         if "L3_wind_direction" in ds:
             ds["L3_wind_direction"].attrs["comment"] = "Wind direction relative to surface current"
         if "L3_wind_speed" in ds:
             ds["L3_wind_speed"].attrs["comment"] = "Wind speed relative to surface current"
 
-    # Step 10: create scalar metadata used by COARE and used in global attrs.
+    # Step 11: create scalar metadata used by COARE and used in global attrs.
     zu_scalar = _as_float_attr(zu, "zu")
     zt_scalar = _as_float_attr(zt, "zt")
     zq_scalar = _as_float_attr(zq, "zq")
@@ -356,7 +422,7 @@ def coare36_to_netcdf(
     zrf_t_scalar = float(zrf_t)
     zrf_q_scalar = float(zrf_q)
 
-    # Step 11: write global metadata.
+    # Step 12: write global metadata.
     base_from_source = dict(source_dataset.attrs) if source_dataset is not None else {}
     base_attrs = {
         "title": "COARE 3.6 air-sea flux outputs",
@@ -368,7 +434,7 @@ def coare36_to_netcdf(
         "uop_coare_version": UOP_COARE_VERSION,
         "processing_level": "L4",
         "input_level": "L3",
-        "input_variables_preserved": "Original L3 variables included with L3_ prefix" if input_vars_used else "False",
+        "input_variables_preserved": "True",
         "options": "Cool skin(jcoolx = 1 is default)" if coolskin else "Cool skin disabled",
         "description": "Outputs from COARE 3.6 model calculations.",
         "references": "https://github.com/NOAA-PSL/COARE-algorithm/blob/master/References/coare36_readme_1.pdf",
@@ -387,7 +453,7 @@ def coare36_to_netcdf(
         base_attrs.update(dataset_attrs)
     ds.attrs.update(base_attrs)
 
-    # Step 12: write NetCDF file and return in-memory dataset.
+    # Step 13: write NetCDF file and return in-memory dataset.
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     netcdf_kwargs = dict(to_netcdf_kwargs or {})

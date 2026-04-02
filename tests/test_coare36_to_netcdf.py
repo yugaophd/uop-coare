@@ -38,6 +38,8 @@ def test_coare36_to_netcdf_writes_file_and_metadata(tmp_path):
             "INST_Gill": xr.DataArray(1.0, attrs={"long_name": "wind instrument"}),
             "INST_HC2A": xr.DataArray(2.0, attrs={"long_name": "temp/humidity instrument"}),
             "not_instrument": xr.DataArray(3.0),
+            "u": xr.DataArray(inputs["u"], dims=("time",), attrs={"units": "m/s", "long_name": "streamwise wind speed"}),
+            "t": xr.DataArray(inputs["t"], dims=("time",), attrs={"units": "degC", "long_name": "air temperature"}),
         }
     )
 
@@ -70,6 +72,13 @@ def test_coare36_to_netcdf_writes_file_and_metadata(tmp_path):
     assert "INST_Gill" in ds
     assert "INST_HC2A" in ds
     assert "not_instrument" not in ds
+    assert "L3_wind_speed" in ds
+    assert "L3_air_temperature" in ds
+    np.testing.assert_allclose(ds["L3_wind_speed"].values, inputs["u"])
+    np.testing.assert_allclose(ds["L3_air_temperature"].values, inputs["t"])
+    assert ds["L3_wind_speed"].attrs["units"] == "m/s"
+    assert ds["L3_wind_speed"].attrs["long_name"] == "L3 input: streamwise wind speed"
+    assert ds.attrs["input_variables_preserved"] == "True"
 
     with xr.open_dataset(out_path) as saved:
         assert "friction_velocity" in saved
@@ -81,6 +90,8 @@ def test_coare36_to_netcdf_writes_file_and_metadata(tmp_path):
         assert "uop_coare_version" in saved.attrs
         assert "INST_Gill" in saved
         assert "INST_HC2A" in saved
+        assert "L3_wind_speed" in saved
+        np.testing.assert_allclose(saved["L3_wind_speed"].values, inputs["u"])
 
 
 def test_coare36_to_netcdf_matches_solver_output(tmp_path):
