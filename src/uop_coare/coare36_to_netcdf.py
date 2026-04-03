@@ -56,7 +56,9 @@ def _add_instrument_variables(
     if source_dataset is None:
         return
     prefixes = _normalize_prefixes(instrument_prefix)
-    for var_name in source_dataset.data_vars:
+    for var_name in source_dataset.variables:
+        if var_name in source_dataset.dims:
+            continue
         if var_name.startswith(prefixes):
             ds_out[var_name] = source_dataset[var_name].copy(deep=True)
 
@@ -72,10 +74,7 @@ def _build_l3_dataarray(
     n_rows: int,
     output_dim: str,
     *,
-    output_name: str,
-    source_name: str,
-    fallback_long_name: str,
-    source_var: Optional[xr.DataArray] = None,
+    source_var: xr.DataArray,
 ) -> Optional[xr.DataArray]:
     data = np.asarray(values.values if hasattr(values, "values") else values)
     if data.ndim == 0:
@@ -83,20 +82,7 @@ def _build_l3_dataarray(
     if data.ndim != 1 or data.size != n_rows:
         return None
 
-    if source_var is not None:
-        attrs = dict(source_var.attrs)
-        attrs.setdefault("source_variable", source_var.name if source_var.name is not None else source_name)
-        attrs.setdefault("description", f"COARE wrapper input variable exported as {output_name}")
-    else:
-        attrs = {
-            "units": "",
-            "long_name": fallback_long_name,
-            "coverage_content_type": "physicalMeasurement",
-            "standard_name": "",
-            "description": f"COARE wrapper input variable exported as {output_name}",
-            "source_variable": source_name,
-        }
-    return xr.DataArray(data, dims=(output_dim,), attrs=attrs)
+    return xr.DataArray(data, dims=(output_dim,), attrs=dict(source_var.attrs))
 
 
 def _sanitize_netcdf_attrs(attrs: Dict[str, Any]) -> Dict[str, Any]:
@@ -337,38 +323,33 @@ def coare36_to_netcdf(
 
     # Step 7: append original wrapper inputs as L3_* variables.
     preserved_inputs = {
-        "L3_wind_speed": (u, "wind speed", "u"),
-        "L3_air_temperature": (t, "air temperature", "t"),
-        "L3_relative_humidity": (rh, "relative humidity", "rh"),
-        "L3_air_pressure": (P, "air pressure", "P"),
-        "L3_sea_surface_skin_temperature": (ts, "sea surface skin temperature", "ts"),
-        "L3_downwelling_shortwave_flux": (sw_dn, "downwelling shortwave radiation", "sw_dn"),
-        "L3_downwelling_longwave_flux": (lw_dn, "downwelling longwave radiation", "lw_dn"),
-        "L3_latitude": (lat_arr, "latitude", "lat"),
-        "L3_longitude": (lon_arr, "longitude", "lon"),
-        "L3_julian_day": (jd, "fractional julian day", "jd"),
-        "L3_boundary_layer_height": (zi, "boundary layer height", "zi"),
-        "L3_rain_rate": (rain, "rainfall rate", "rain"),
-        "L3_sea_surface_salinity": (Ss, "sea surface salinity", "Ss"),
+        "L3_wind_speed": (u, "wind_speed"),
+        "L3_air_temperature": (t, "air_temperature"),
+        "L3_relative_humidity": (rh, "relative_humidity"),
+        "L3_air_pressure": (P, "air_pressure"),
+        "L3_sea_surface_skin_temperature": (ts, "sea_surface_skin_temperature"),
+        "L3_downwelling_shortwave_flux": (sw_dn, "downwelling_shortwave_flux"),
+        "L3_downwelling_longwave_flux": (lw_dn, "downwelling_longwave_flux"),
+        "L3_latitude": (lat_arr, "latitude"),
+        "L3_longitude": (lon_arr, "longitude"),
+        "L3_julian_day": (jd, "julian_day"),
+        "L3_boundary_layer_height": (zi, "boundary_layer_height"),
+        "L3_rain_rate": (rain, "rain_rate"),
+        "L3_sea_surface_salinity": (Ss, "sea_surface_salinity"),
     }
     optional_inputs = {
-        "L3_wave_phase_speed": (cp, "wave phase speed", "cp"),
-        "L3_significant_wave_height": (sigH, "significant wave height", "sigH"),
-        "L3_wind_direction": (wind_direction, "wind direction", "wind_direction"),
+        "L3_wave_phase_speed": (cp, "wave_phase_speed"),
+        "L3_significant_wave_height": (sigH, "significant_wave_height"),
+        "L3_wind_direction": (wind_direction, "wind_direction"),
     }
     preserved_inputs.update({name: spec for name, spec in optional_inputs.items() if spec[0] is not None})
 
-    for output_name, (values, fallback_long_name, source_name) in preserved_inputs.items():
-        source_var = None
-        if source_dataset is not None and source_name in source_dataset:
-            source_var = source_dataset[source_name]
+    for output_name, (values, source_name) in preserved_inputs.items():
+        source_var = source_dataset[source_name]
         data_array = _build_l3_dataarray(
-            values,
+            source_var,
             n_rows,
             output_dim,
-            output_name=output_name,
-            source_name=source_name,
-            fallback_long_name=fallback_long_name,
             source_var=source_var,
         )
         if data_array is not None:
@@ -383,9 +364,6 @@ def coare36_to_netcdf(
                 source_dataset[input_var],
                 n_rows,
                 output_dim,
-                output_name=output_name,
-                source_name=input_var,
-                fallback_long_name=input_var,
                 source_var=source_dataset[input_var],
             )
             if data_array is not None:

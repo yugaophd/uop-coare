@@ -38,7 +38,7 @@ def test_coare36_to_netcdf_writes_file_and_metadata(tmp_path):
             "INST_Gill": xr.DataArray(1.0, attrs={"long_name": "wind instrument", "serial_number": "G-123"}),
             "INST_HC2A": xr.DataArray(2.0, attrs={"long_name": "temp/humidity instrument"}),
             "not_instrument": xr.DataArray(3.0),
-            "u": xr.DataArray(
+            "wind_speed": xr.DataArray(
                 inputs["u"],
                 dims=("time",),
                 attrs={
@@ -48,7 +48,7 @@ def test_coare36_to_netcdf_writes_file_and_metadata(tmp_path):
                     "comment": "measured by source L3 pipeline",
                 },
             ),
-            "t": xr.DataArray(
+            "air_temperature": xr.DataArray(
                 inputs["t"],
                 dims=("time",),
                 attrs={"units": "degC", "long_name": "air temperature"},
@@ -131,3 +131,43 @@ def test_coare36_to_netcdf_matches_solver_output(tmp_path):
     np.testing.assert_allclose(ds["friction_velocity"].values, direct[:, i_friction_velocity])
     np.testing.assert_allclose(ds["net_solar_radiation"].values, direct[:, i_net_solar_radiation])
     np.testing.assert_allclose(ds["albedo"].values, direct[:, i_albedo])
+
+
+def test_coare36_to_netcdf_copies_l3_source_variables_with_prefixed_names(tmp_path):
+    N = 3
+    inputs = _build_constant_inputs(N)
+    out_path = tmp_path / "coare36_l3_copy.nc"
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text('{"project": "unit-test"}', encoding="utf-8")
+    src = xr.Dataset(
+        {
+            "wind_speed": xr.DataArray(
+                inputs["u"],
+                dims=("sample",),
+                attrs={
+                    "units": "m/s",
+                    "long_name": "true wind speed",
+                    "standard_name": "wind_speed",
+                    "instrument": "Gill",
+                },
+            ),
+            "air_temperature": xr.DataArray(
+                inputs["t"],
+                dims=("sample",),
+                attrs={"units": "degC", "long_name": "air temperature from L3"},
+            ),
+            "INST_Gill": xr.DataArray(1.0, attrs={"serial_number": "G-123"}),
+        }
+    )
+
+    ds = coare36_to_netcdf(out_path, attrs_json, **inputs, source_dataset=src)
+
+    assert "L3_wind_speed" in ds
+    assert "L3_air_temperature" in ds
+    np.testing.assert_allclose(ds["L3_wind_speed"].values, src["wind_speed"].values)
+    np.testing.assert_allclose(ds["L3_air_temperature"].values, src["air_temperature"].values)
+    assert ds["L3_wind_speed"].attrs == src["wind_speed"].attrs
+    assert ds["L3_air_temperature"].attrs == src["air_temperature"].attrs
+    assert "source_variable" not in ds["L3_wind_speed"].attrs
+    assert "description" not in ds["L3_wind_speed"].attrs
+    assert ds["INST_Gill"].attrs == src["INST_Gill"].attrs
