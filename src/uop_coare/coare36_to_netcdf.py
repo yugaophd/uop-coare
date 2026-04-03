@@ -72,6 +72,7 @@ def _build_l3_dataarray(
     n_rows: int,
     output_dim: str,
     *,
+    output_name: str,
     source_name: str,
     fallback_long_name: str,
     source_var: Optional[xr.DataArray] = None,
@@ -82,18 +83,19 @@ def _build_l3_dataarray(
     if data.ndim != 1 or data.size != n_rows:
         return None
 
-    attrs = {
-        "units": source_var.attrs.get("units", "") if source_var is not None else "",
-        "long_name": f"L3 input: {source_var.attrs.get('long_name', fallback_long_name) if source_var is not None else fallback_long_name}",
-        "coverage_content_type": (
-            source_var.attrs.get("coverage_content_type", "physicalMeasurement")
-            if source_var is not None
-            else "physicalMeasurement"
-        ),
-        "standard_name": source_var.attrs.get("standard_name", "") if source_var is not None else "",
-        "description": f"COARE wrapper input variable: {source_name}",
-        "source_variable": source_var.name if source_var is not None and source_var.name is not None else source_name,
-    }
+    if source_var is not None:
+        attrs = dict(source_var.attrs)
+        attrs.setdefault("source_variable", source_var.name if source_var.name is not None else source_name)
+        attrs.setdefault("description", f"COARE wrapper input variable exported as {output_name}")
+    else:
+        attrs = {
+            "units": "",
+            "long_name": fallback_long_name,
+            "coverage_content_type": "physicalMeasurement",
+            "standard_name": "",
+            "description": f"COARE wrapper input variable exported as {output_name}",
+            "source_variable": source_name,
+        }
     return xr.DataArray(data, dims=(output_dim,), attrs=attrs)
 
 
@@ -364,6 +366,7 @@ def coare36_to_netcdf(
             values,
             n_rows,
             output_dim,
+            output_name=output_name,
             source_name=source_name,
             fallback_long_name=fallback_long_name,
             source_var=source_var,
@@ -380,6 +383,7 @@ def coare36_to_netcdf(
                 source_dataset[input_var],
                 n_rows,
                 output_dim,
+                output_name=output_name,
                 source_name=input_var,
                 fallback_long_name=input_var,
                 source_var=source_dataset[input_var],

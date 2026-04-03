@@ -35,11 +35,24 @@ def test_coare36_to_netcdf_writes_file_and_metadata(tmp_path):
     attrs_json.write_text('{"project": "unit-test", "config_file": "test.json"}', encoding="utf-8")
     src = xr.Dataset(
         {
-            "INST_Gill": xr.DataArray(1.0, attrs={"long_name": "wind instrument"}),
+            "INST_Gill": xr.DataArray(1.0, attrs={"long_name": "wind instrument", "serial_number": "G-123"}),
             "INST_HC2A": xr.DataArray(2.0, attrs={"long_name": "temp/humidity instrument"}),
             "not_instrument": xr.DataArray(3.0),
-            "u": xr.DataArray(inputs["u"], dims=("time",), attrs={"units": "m/s", "long_name": "streamwise wind speed"}),
-            "t": xr.DataArray(inputs["t"], dims=("time",), attrs={"units": "degC", "long_name": "air temperature"}),
+            "u": xr.DataArray(
+                inputs["u"],
+                dims=("time",),
+                attrs={
+                    "units": "m/s",
+                    "long_name": "streamwise wind speed",
+                    "standard_name": "wind_speed",
+                    "comment": "measured by source L3 pipeline",
+                },
+            ),
+            "t": xr.DataArray(
+                inputs["t"],
+                dims=("time",),
+                attrs={"units": "degC", "long_name": "air temperature"},
+            ),
         }
     )
 
@@ -72,12 +85,15 @@ def test_coare36_to_netcdf_writes_file_and_metadata(tmp_path):
     assert "INST_Gill" in ds
     assert "INST_HC2A" in ds
     assert "not_instrument" not in ds
+    assert ds["INST_Gill"].attrs["serial_number"] == "G-123"
     assert "L3_wind_speed" in ds
     assert "L3_air_temperature" in ds
     np.testing.assert_allclose(ds["L3_wind_speed"].values, inputs["u"])
     np.testing.assert_allclose(ds["L3_air_temperature"].values, inputs["t"])
     assert ds["L3_wind_speed"].attrs["units"] == "m/s"
-    assert ds["L3_wind_speed"].attrs["long_name"] == "L3 input: streamwise wind speed"
+    assert ds["L3_wind_speed"].attrs["long_name"] == "streamwise wind speed"
+    assert ds["L3_wind_speed"].attrs["standard_name"] == "wind_speed"
+    assert ds["L3_wind_speed"].attrs["comment"] == "measured by source L3 pipeline"
     assert ds.attrs["input_variables_preserved"] == "True"
 
     with xr.open_dataset(out_path) as saved:
@@ -90,8 +106,11 @@ def test_coare36_to_netcdf_writes_file_and_metadata(tmp_path):
         assert "uop_coare_version" in saved.attrs
         assert "INST_Gill" in saved
         assert "INST_HC2A" in saved
+        assert saved["INST_Gill"].attrs["serial_number"] == "G-123"
         assert "L3_wind_speed" in saved
         np.testing.assert_allclose(saved["L3_wind_speed"].values, inputs["u"])
+        assert saved["L3_wind_speed"].attrs["long_name"] == "streamwise wind speed"
+        assert saved["L3_wind_speed"].attrs["comment"] == "measured by source L3 pipeline"
 
 
 def test_coare36_to_netcdf_matches_solver_output(tmp_path):
