@@ -215,8 +215,9 @@ def coare36_to_netcdf(
       metadata variables in ``source_dataset`` that should be copied to the
       output. Default ``"INST_"``.
     - input_vars_used: optional mapping of ``{output_name: source_variable_name}``
-      for adding additional 1-D variables from ``source_dataset`` to the output
-      dataset with provenance attributes. Default ``None``.
+      used both to override the source variable for built-in preserved
+      ``L3_*`` outputs and to add additional 1-D variables from
+      ``source_dataset`` to the output dataset. Default ``None``.
     - sea_water_temperature: optional array-like of sea-water temperature
       values (length N) to include as the variable ``"L3_sea_water_temperature"``.
       Default ``None``.
@@ -344,20 +345,24 @@ def coare36_to_netcdf(
     }
     preserved_inputs.update({name: spec for name, spec in optional_inputs.items() if spec[0] is not None})
 
-    for output_name, (values, source_name) in preserved_inputs.items():
-        source_var = source_dataset[source_name]
-        data_array = _build_l3_dataarray(
-            source_var,
-            n_rows,
-            output_dim,
-            source_var=source_var,
-        )
-        if data_array is not None:
-            ds[output_name] = data_array
+    if source_dataset is not None:
+        for output_name, (_, source_name) in preserved_inputs.items():
+            resolved_source_name = input_vars_used.get(output_name, source_name) if input_vars_used else source_name
+            source_var = source_dataset[resolved_source_name]
+            data_array = _build_l3_dataarray(
+                source_var,
+                n_rows,
+                output_dim,
+                source_var=source_var,
+            )
+            if data_array is not None:
+                ds[output_name] = data_array
 
     # Step 8: append additional source variables if requested by mapping.
     if source_dataset is not None and input_vars_used:
         for output_name, input_var in input_vars_used.items():
+            if output_name in preserved_inputs:
+                continue
             if input_var not in source_dataset:
                 continue
             data_array = _build_l3_dataarray(

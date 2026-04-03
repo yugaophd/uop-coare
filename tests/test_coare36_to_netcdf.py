@@ -171,3 +171,43 @@ def test_coare36_to_netcdf_copies_l3_source_variables_with_prefixed_names(tmp_pa
     assert "source_variable" not in ds["L3_wind_speed"].attrs
     assert "description" not in ds["L3_wind_speed"].attrs
     assert ds["INST_Gill"].attrs == src["INST_Gill"].attrs
+
+
+def test_coare36_to_netcdf_uses_input_vars_used_for_builtin_l3_exports(tmp_path):
+    N = 3
+    inputs = _build_constant_inputs(N)
+    out_path = tmp_path / "coare36_l3_mapped.nc"
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text('{"project": "unit-test"}', encoding="utf-8")
+    src = xr.Dataset(
+        {
+            "gill_wind_speed": xr.DataArray(
+                inputs["u"],
+                dims=("sample",),
+                attrs={
+                    "units": "m/s",
+                    "long_name": "Gill wind speed",
+                    "standard_name": "wind_speed",
+                },
+            ),
+            "wxt_air_temperature": xr.DataArray(
+                inputs["t"],
+                dims=("sample",),
+                attrs={"units": "degC", "long_name": "WXT air temperature"},
+            ),
+        }
+    )
+
+    ds = coare36_to_netcdf(
+        out_path,
+        attrs_json,
+        **inputs,
+        source_dataset=src,
+        input_vars_used={
+            "L3_wind_speed": "gill_wind_speed",
+            "L3_air_temperature": "wxt_air_temperature",
+        },
+    )
+
+    assert ds["L3_wind_speed"].attrs == src["gill_wind_speed"].attrs
+    assert ds["L3_air_temperature"].attrs == src["wxt_air_temperature"].attrs
