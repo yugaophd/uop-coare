@@ -48,6 +48,214 @@ def _as_float_attr(value: Any, name: str) -> float:
     return float(np.nanmean(arr))
 
 
+def _broadcast_input_to_output(value: Any, n_rows: int, name: str) -> np.ndarray:
+    arr = _as_numpy_1d(value, name)
+    if arr.size == 1:
+        return np.full(n_rows, arr[0])
+    if arr.size != n_rows:
+        raise ValueError(f"{name} has size {arr.size}, expected 1 or {n_rows}")
+    return arr.copy()
+
+
+def _resolve_instrument_name(
+    source_dataset: xr.Dataset,
+    instrument_name: str,
+    role: str,
+) -> str:
+    if instrument_name in source_dataset.variables:
+        return instrument_name
+
+    matches = sorted(name for name in source_dataset.variables if name.startswith(instrument_name))
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        match_list = ", ".join(matches)
+        raise ValueError(
+            f"Ambiguous instrument_config for role '{role}': '{instrument_name}' matches "
+            f"multiple source variables ({match_list}). Pass the exact variable name."
+        )
+    raise ValueError(
+        f"Instrument '{instrument_name}' for role '{role}' was not found in source_dataset "
+        "and did not match any variable-name prefix."
+    )
+
+
+def _resolve_instrument_config(
+    source_dataset: Optional[xr.Dataset],
+    instrument_config: Optional[Dict[str, str]],
+) -> Dict[str, str]:
+    if instrument_config is None:
+        return {}
+    if source_dataset is None:
+        return {role: str(inst_name) for role, inst_name in instrument_config.items()}
+    return {
+        role: _resolve_instrument_name(source_dataset, str(inst_name), role)
+        for role, inst_name in instrument_config.items()
+    }
+
+
+def _default_l3_input_metadata() -> Dict[str, Dict[str, str]]:
+    return {
+        "L3_wind_speed": {
+            "units": "m s-1",
+            "long_name": "L3 wind speed used by COARE",
+            "description": "Wind speed passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_wind_height": {
+            "units": "m",
+            "long_name": "L3 wind measurement height used by COARE",
+            "description": "Wind measurement height passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_air_temperature": {
+            "units": "degC",
+            "long_name": "L3 air temperature used by COARE",
+            "description": "Air temperature passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_air_temperature_height": {
+            "units": "m",
+            "long_name": "L3 air temperature measurement height used by COARE",
+            "description": "Air temperature measurement height passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_relative_humidity": {
+            "units": "%",
+            "long_name": "L3 relative humidity used by COARE",
+            "description": "Relative humidity passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_relative_humidity_height": {
+            "units": "m",
+            "long_name": "L3 humidity measurement height used by COARE",
+            "description": "Humidity measurement height passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_air_pressure": {
+            "units": "hPa",
+            "long_name": "L3 atmospheric pressure used by COARE",
+            "description": "Atmospheric pressure passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_sea_surface_temperature": {
+            "units": "degC",
+            "long_name": "L3 sea surface temperature used by COARE",
+            "description": "Sea surface temperature passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_downwelling_shortwave_flux": {
+            "units": "W m-2",
+            "long_name": "L3 downwelling shortwave flux used by COARE",
+            "description": "Downwelling shortwave radiation passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_downwelling_longwave_flux": {
+            "units": "W m-2",
+            "long_name": "L3 downwelling longwave flux used by COARE",
+            "description": "Downwelling longwave radiation passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_latitude": {
+            "units": "degrees_north",
+            "long_name": "L3 latitude used by COARE",
+            "description": "Latitude passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_longitude": {
+            "units": "degrees_east",
+            "long_name": "L3 longitude used by COARE",
+            "description": "Longitude passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_julian_day": {
+            "units": "day",
+            "long_name": "L3 fractional Julian day used by COARE",
+            "description": "Fractional Julian day passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_boundary_layer_height": {
+            "units": "m",
+            "long_name": "L3 boundary layer height used by COARE",
+            "description": "Boundary layer height passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_rain_rate": {
+            "units": "mm hr-1",
+            "long_name": "L3 rain rate used by COARE",
+            "description": "Rain rate passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_sea_surface_salinity": {
+            "units": "PSU",
+            "long_name": "L3 sea surface salinity used by COARE",
+            "description": "Sea surface salinity passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_wave_phase_speed": {
+            "units": "m s-1",
+            "long_name": "L3 wave phase speed used by COARE",
+            "description": "Wave phase speed passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_significant_wave_height": {
+            "units": "m",
+            "long_name": "L3 significant wave height used by COARE",
+            "description": "Significant wave height passed to uop_coare.coare36_to_netcdf",
+        },
+        "L3_wind_direction": {
+            "units": "degree",
+            "long_name": "L3 wind direction used by COARE",
+            "description": "Wind direction passed to uop_coare.coare36_to_netcdf",
+        },
+    }
+
+
+def _l3_input_specs(
+    *,
+    u: Any,
+    zu: Any,
+    t: Any,
+    zt: Any,
+    rh: Any,
+    zq: Any,
+    P: Any,
+    ts: Any,
+    sw_dn: Any,
+    lw_dn: Any,
+    lat: Any,
+    lon: Any,
+    jd: Any,
+    zi: Any,
+    rain: Any,
+    Ss: Any,
+    cp: Any = None,
+    sigH: Any = None,
+    wind_direction: Any = None,
+) -> Dict[str, tuple[Any, str]]:
+    specs = {
+        "L3_wind_speed": (u, "wind_speed"),
+        "L3_wind_height": (zu, "wind_height"),
+        "L3_air_temperature": (t, "air_temperature"),
+        "L3_air_temperature_height": (zt, "air_temperature_height"),
+        "L3_relative_humidity": (rh, "relative_humidity"),
+        "L3_relative_humidity_height": (zq, "relative_humidity_height"),
+        "L3_air_pressure": (P, "air_pressure"),
+        "L3_sea_surface_temperature": (ts, "sea_surface_temperature"),
+        "L3_downwelling_shortwave_flux": (sw_dn, "downwelling_shortwave_flux"),
+        "L3_downwelling_longwave_flux": (lw_dn, "downwelling_longwave_flux"),
+        "L3_latitude": (lat, "latitude"),
+        "L3_longitude": (lon, "longitude"),
+        "L3_julian_day": (jd, "julian_day"),
+        "L3_boundary_layer_height": (zi, "boundary_layer_height"),
+        "L3_rain_rate": (rain, "rain_rate"),
+        "L3_sea_surface_salinity": (Ss, "sea_surface_salinity"),
+    }
+    if cp is not None:
+        specs["L3_wave_phase_speed"] = (cp, "wave_phase_speed")
+    if sigH is not None:
+        specs["L3_significant_wave_height"] = (sigH, "significant_wave_height")
+    if wind_direction is not None:
+        specs["L3_wind_direction"] = (wind_direction, "wind_direction")
+    return specs
+
+
+def _build_l3_input_dataarray(
+    values: Any,
+    n_rows: int,
+    output_dim: str,
+    *,
+    source_var: Optional[xr.DataArray] = None,
+    fallback_attrs: Optional[Dict[str, Any]] = None,
+) -> xr.DataArray:
+    data = _broadcast_input_to_output(values, n_rows, output_dim)
+    attrs = dict(source_var.attrs) if source_var is not None else dict(fallback_attrs or {})
+    return xr.DataArray(data, dims=(output_dim,), attrs=_sanitize_netcdf_attrs(attrs))
+
+
 def _add_instrument_variables(
     ds_out: xr.Dataset,
     source_dataset: Optional[xr.Dataset],
@@ -96,16 +304,21 @@ def _copy_prefixed_l3_variables(
     n_rows: int,
     output_dim: str,
     instrument_prefix: str | Iterable[str],
+    *,
+    skip_outputs: Optional[set[str]] = None,
 ) -> None:
     if source_dataset is None:
         return
 
+    skip_outputs = skip_outputs or set()
     prefixes = _normalize_prefixes(instrument_prefix)
     for var_name, source_var in source_dataset.data_vars.items():
         if var_name.startswith(prefixes):
             continue
 
         output_name = _l3_output_name(var_name)
+        if output_name in skip_outputs:
+            continue
         data = np.asarray(source_var.values)
         attrs = dict(source_var.attrs)
 
@@ -194,11 +407,10 @@ def coare36_to_netcdf(
     When ``source_dataset`` is provided, non-instrument variables are copied
     into the L4 dataset with an ``L3_`` prefix while preserving their original
     variable attributes. Variables already named ``L3_*`` keep that name. For
-    built-in preserved inputs such as ``L3_wind_speed`` and
-    ``L3_air_temperature``, the wrapper uses the direct wrapper inputs for data
-    values and can use ``input_vars_used`` to source attributes from alternate
-    L3 variables before the full L3 copy step overwrites them with the actual
-    source-dataset variable when available.
+    built-in preserved inputs such as ``L3_wind_speed``,
+    ``L3_air_temperature``, and the corresponding instrument-height variables,
+    the wrapper always writes the actual values passed into this function while
+    preserving metadata from the matching source L3 variable when available.
 
     Parameters
     ----------
@@ -307,6 +519,8 @@ def coare36_to_netcdf(
     """
     # Step 1: load required custom global attributes from JSON.
     custom_global_attrs = _load_global_attrs_json(global_attrs_json)
+    cp_solver = _as_numpy_1d(cp, "cp") if cp is not None else None
+    sigH_solver = _as_numpy_1d(sigH, "sigH") if sigH is not None else None
 
     # Step 2: run COARE solver and force albedo outputs for complete metadata export.
     solver_output = coare36vn_zrf_et(
@@ -326,8 +540,8 @@ def coare36_to_netcdf(
         zi=zi,
         rain=rain,
         Ss=Ss,
-        cp=cp,
-        sigH=sigH,
+        cp=cp_solver,
+        sigH=sigH_solver,
         zrf_u=zrf_u,
         zrf_t=zrf_t,
         zrf_q=zrf_q,
@@ -338,6 +552,8 @@ def coare36_to_netcdf(
         payne_min_solar_elev_deg=payne_min_solar_elev_deg,
         auto_plot=auto_plot,
     )
+
+    resolved_instrument_config = _resolve_instrument_config(source_dataset, instrument_config)
 
     # Step 3: validate output shape against metadata-driven variable list.
     variables_info = get_variables_info(albedo_method=albedo)
@@ -383,44 +599,49 @@ def coare36_to_netcdf(
     # Step 6: append instrument scalar variables from source dataset (INST_*).
     _add_instrument_variables(ds, source_dataset, instrument_prefix)
 
-    # Step 7: append original wrapper inputs as L3_* variables.
-    preserved_inputs = {
-        "L3_wind_speed": (u, "wind_speed"),
-        "L3_air_temperature": (t, "air_temperature"),
-        "L3_relative_humidity": (rh, "relative_humidity"),
-        "L3_air_pressure": (P, "air_pressure"),
-        "L3_sea_surface_temperature": (ts, "sea_surface_temperature"),
-        "L3_downwelling_shortwave_flux": (sw_dn, "downwelling_shortwave_flux"),
-        "L3_downwelling_longwave_flux": (lw_dn, "downwelling_longwave_flux"),
-        "L3_latitude": (lat_arr, "latitude"),
-        "L3_longitude": (lon_arr, "longitude"),
-        "L3_julian_day": (jd, "julian_day"),
-        "L3_boundary_layer_height": (zi, "boundary_layer_height"),
-        "L3_rain_rate": (rain, "rain_rate"),
-        "L3_sea_surface_salinity": (Ss, "sea_surface_salinity"),
-    }
-    optional_inputs = {
-        "L3_wave_phase_speed": (cp, "wave_phase_speed"),
-        "L3_significant_wave_height": (sigH, "significant_wave_height"),
-        "L3_wind_direction": (wind_direction, "wind_direction"),
-    }
-    preserved_inputs.update({name: spec for name, spec in optional_inputs.items() if spec[0] is not None})
-
-    if source_dataset is not None:
-        for output_name, (values, source_name) in preserved_inputs.items():
-            resolved_source_name = input_vars_used.get(output_name, source_name) if input_vars_used else source_name
-            source_var = source_dataset.get(resolved_source_name)
-            data_array = _build_l3_dataarray(
-                values,
-                n_rows,
-                output_dim,
-                source_var=source_var,
-            )
-            if data_array is not None:
-                ds[output_name] = data_array
+    # Step 7: append original wrapper inputs as L3_* variables, preserving source L3 attrs when available.
+    preserved_inputs = _l3_input_specs(
+        u=u,
+        zu=zu,
+        t=t,
+        zt=zt,
+        rh=rh,
+        zq=zq,
+        P=P,
+        ts=ts,
+        sw_dn=sw_dn,
+        lw_dn=lw_dn,
+        lat=lat_arr,
+        lon=lon_arr,
+        jd=jd,
+        zi=zi,
+        rain=rain,
+        Ss=Ss,
+        cp=cp if cp is not None else cp_solver,
+        sigH=sigH if sigH is not None else sigH_solver,
+        wind_direction=wind_direction,
+    )
+    default_l3_metadata = _default_l3_input_metadata()
+    for output_name, (values, source_name) in preserved_inputs.items():
+        resolved_source_name = input_vars_used.get(output_name, source_name) if input_vars_used else source_name
+        source_var = source_dataset.get(resolved_source_name) if source_dataset is not None else None
+        ds[output_name] = _build_l3_input_dataarray(
+            values,
+            n_rows,
+            output_dim,
+            source_var=source_var,
+            fallback_attrs=default_l3_metadata.get(output_name),
+        )
 
     # Step 8: copy L3 source variables directly with an L3_ prefix.
-    _copy_prefixed_l3_variables(ds, source_dataset, n_rows, output_dim, instrument_prefix)
+    _copy_prefixed_l3_variables(
+        ds,
+        source_dataset,
+        n_rows,
+        output_dim,
+        instrument_prefix,
+        skip_outputs=set(preserved_inputs),
+    )
 
     # Step 9: append additional source variables if requested by mapping.
     if source_dataset is not None and input_vars_used:
@@ -496,8 +717,8 @@ def coare36_to_netcdf(
         "reference_air_temperature_height_m": zrf_t_scalar,
         "reference_humidity_height_m": zrf_q_scalar,
     }
-    if instrument_config is not None:
-        for role, inst_name in instrument_config.items():
+    if resolved_instrument_config:
+        for role, inst_name in resolved_instrument_config.items():
             base_attrs[f"instrument_{role}"] = str(inst_name)
     base_attrs = {**base_from_source, **base_attrs, **custom_global_attrs}
     if dataset_attrs:

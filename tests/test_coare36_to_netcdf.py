@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import xarray as xr
 
 from uop_coare.coare36_variables_config import get_variables_info
@@ -88,12 +89,18 @@ def test_coare36_to_netcdf_writes_file_and_metadata(tmp_path):
     assert ds["INST_Gill"].attrs["serial_number"] == "G-123"
     assert "L3_wind_speed" in ds
     assert "L3_air_temperature" in ds
+    assert "L3_wind_height" in ds
+    assert "L3_air_temperature_height" in ds
     np.testing.assert_allclose(ds["L3_wind_speed"].values, inputs["u"])
     np.testing.assert_allclose(ds["L3_air_temperature"].values, inputs["t"])
+    np.testing.assert_allclose(ds["L3_wind_height"].values, inputs["zu"])
+    np.testing.assert_allclose(ds["L3_air_temperature_height"].values, inputs["zt"])
     assert ds["L3_wind_speed"].attrs["units"] == "m/s"
     assert ds["L3_wind_speed"].attrs["long_name"] == "streamwise wind speed"
     assert ds["L3_wind_speed"].attrs["standard_name"] == "wind_speed"
     assert ds["L3_wind_speed"].attrs["comment"] == "measured by source L3 pipeline"
+    assert ds["L3_wind_height"].attrs["units"] == "m"
+    assert "description" in ds["L3_wind_height"].attrs
     assert ds.attrs["input_variables_preserved"] == "True"
 
     with xr.open_dataset(out_path) as saved:
@@ -108,9 +115,166 @@ def test_coare36_to_netcdf_writes_file_and_metadata(tmp_path):
         assert "INST_HC2A" in saved
         assert saved["INST_Gill"].attrs["serial_number"] == "G-123"
         assert "L3_wind_speed" in saved
+        assert "L3_wind_height" in saved
         np.testing.assert_allclose(saved["L3_wind_speed"].values, inputs["u"])
+        np.testing.assert_allclose(saved["L3_wind_height"].values, inputs["zu"])
         assert saved["L3_wind_speed"].attrs["long_name"] == "streamwise wind speed"
         assert saved["L3_wind_speed"].attrs["comment"] == "measured by source L3 pipeline"
+
+
+def test_coare36_to_netcdf_resolves_exact_instrument_names_in_attrs(tmp_path):
+    N = 3
+    inputs = _build_constant_inputs(N)
+    out_path = tmp_path / "coare36_exact_instrument.nc"
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text("{}", encoding="utf-8")
+    src = xr.Dataset(
+        {
+            "INST_GILL_BOW": xr.DataArray(1.0),
+            "INST_WXT": xr.DataArray(2.0),
+        }
+    )
+
+    ds = coare36_to_netcdf(
+        out_path,
+        attrs_json,
+        **inputs,
+        source_dataset=src,
+        instrument_config={"wind": "INST_GILL_BOW", "air_temperature": "INST_WXT"},
+    )
+
+    assert ds.attrs["instrument_wind"] == "INST_GILL_BOW"
+    assert ds.attrs["instrument_air_temperature"] == "INST_WXT"
+
+
+def test_coare36_to_netcdf_resolves_unique_instrument_prefix_in_attrs(tmp_path):
+    N = 3
+    inputs = _build_constant_inputs(N)
+    out_path = tmp_path / "coare36_unique_instrument.nc"
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text("{}", encoding="utf-8")
+    src = xr.Dataset(
+        {
+            "INST_GILL_BOW": xr.DataArray(1.0),
+            "INST_WXT": xr.DataArray(2.0),
+        }
+    )
+
+    ds = coare36_to_netcdf(
+        out_path,
+        attrs_json,
+        **inputs,
+        source_dataset=src,
+        instrument_config={"wind": "INST_GILL"},
+    )
+
+    assert ds.attrs["instrument_wind"] == "INST_GILL_BOW"
+
+
+def test_coare36_to_netcdf_raises_for_ambiguous_instrument_prefix(tmp_path):
+    N = 3
+    inputs = _build_constant_inputs(N)
+    out_path = tmp_path / "coare36_ambiguous_instrument.nc"
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text("{}", encoding="utf-8")
+    src = xr.Dataset(
+        {
+            "INST_GILL_BOW": xr.DataArray(1.0),
+            "INST_GILL_MAST": xr.DataArray(2.0),
+        }
+    )
+
+    with pytest.raises(ValueError, match="Ambiguous instrument_config.*INST_GILL.*Pass the exact variable name"):
+        coare36_to_netcdf(
+            out_path,
+            attrs_json,
+            **inputs,
+            source_dataset=src,
+            instrument_config={"wind": "INST_GILL"},
+        )
+
+
+def test_coare36_to_netcdf_raises_for_missing_instrument_name(tmp_path):
+    N = 3
+    inputs = _build_constant_inputs(N)
+    out_path = tmp_path / "coare36_missing_instrument.nc"
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text("{}", encoding="utf-8")
+    src = xr.Dataset({"INST_WXT": xr.DataArray(1.0)})
+
+    with pytest.raises(ValueError, match="Instrument 'INST_GILL'.*role 'wind'.*not found"):
+        coare36_to_netcdf(
+            out_path,
+            attrs_json,
+            **inputs,
+            source_dataset=src,
+            instrument_config={"wind": "INST_GILL"},
+        )
+
+
+def test_coare36_to_netcdf_preserves_full_coare_inputs_as_variables(tmp_path):
+    N = 4
+    inputs = _build_constant_inputs(N)
+    inputs["zu"] = 10.0
+    inputs["zt"] = 12.0
+    inputs["zq"] = 14.0
+    inputs["zi"] = 600.0
+    inputs["lat"] = 45.0
+    inputs["lon"] = -30.0
+    inputs["cp"] = 8.0
+    inputs["sigH"] = 2.5
+    out_path = tmp_path / "coare36_inputs.nc"
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text("{}", encoding="utf-8")
+
+    ds = coare36_to_netcdf(out_path, attrs_json, **inputs)
+
+    expected = {
+        "L3_wind_speed": np.full(N, 5.0),
+        "L3_wind_height": np.full(N, 10.0),
+        "L3_air_temperature": np.full(N, 20.0),
+        "L3_air_temperature_height": np.full(N, 12.0),
+        "L3_relative_humidity": np.full(N, 80.0),
+        "L3_relative_humidity_height": np.full(N, 14.0),
+        "L3_air_pressure": np.full(N, 1013.0),
+        "L3_sea_surface_temperature": np.full(N, 21.0),
+        "L3_downwelling_shortwave_flux": np.full(N, 200.0),
+        "L3_downwelling_longwave_flux": np.full(N, 400.0),
+        "L3_latitude": np.full(N, 45.0),
+        "L3_longitude": np.full(N, -30.0),
+        "L3_julian_day": inputs["jd"],
+        "L3_boundary_layer_height": np.full(N, 600.0),
+        "L3_rain_rate": np.full(N, 0.0),
+        "L3_sea_surface_salinity": np.full(N, 35.0),
+        "L3_wave_phase_speed": np.full(N, 8.0),
+        "L3_significant_wave_height": np.full(N, 2.5),
+    }
+
+    for name, values in expected.items():
+        assert name in ds
+        assert ds[name].dims == ("time",)
+        np.testing.assert_allclose(ds[name].values, values)
+        assert "long_name" in ds[name].attrs
+        assert "units" in ds[name].attrs
+        assert "description" in ds[name].attrs
+
+    with xr.open_dataset(out_path) as saved:
+        for name, values in expected.items():
+            assert name in saved
+            np.testing.assert_allclose(saved[name].values, values)
+
+
+def test_coare36_to_netcdf_omits_optional_wave_inputs_when_not_provided(tmp_path):
+    N = 3
+    inputs = _build_constant_inputs(N)
+    out_path = tmp_path / "coare36_inputs_no_waves.nc"
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text("{}", encoding="utf-8")
+
+    ds = coare36_to_netcdf(out_path, attrs_json, **inputs)
+
+    assert "L3_wave_phase_speed" not in ds
+    assert "L3_significant_wave_height" not in ds
 
 
 def test_coare36_to_netcdf_matches_solver_output(tmp_path):
@@ -164,8 +328,8 @@ def test_coare36_to_netcdf_copies_l3_source_variables_with_prefixed_names(tmp_pa
 
     assert "L3_wind_speed" in ds
     assert "L3_air_temperature" in ds
-    np.testing.assert_allclose(ds["L3_wind_speed"].values, src["wind_speed"].values)
-    np.testing.assert_allclose(ds["L3_air_temperature"].values, src["air_temperature"].values)
+    np.testing.assert_allclose(ds["L3_wind_speed"].values, inputs["u"])
+    np.testing.assert_allclose(ds["L3_air_temperature"].values, inputs["t"])
     assert ds["L3_wind_speed"].attrs == src["wind_speed"].attrs
     assert ds["L3_air_temperature"].attrs == src["air_temperature"].attrs
     assert "source_variable" not in ds["L3_wind_speed"].attrs
@@ -208,11 +372,8 @@ def test_coare36_to_netcdf_copies_all_l3_source_variables_with_prefix(tmp_path):
 
     ds = coare36_to_netcdf(out_path, attrs_json, **inputs, source_dataset=src)
 
-    np.testing.assert_allclose(ds["L3_wind_speed"].values, src["wind_speed"].values)
-    np.testing.assert_allclose(
-        ds["L3_sea_surface_temperature"].values,
-        src["sea_surface_temperature"].values,
-    )
+    np.testing.assert_allclose(ds["L3_wind_speed"].values, inputs["u"])
+    np.testing.assert_allclose(ds["L3_sea_surface_temperature"].values, inputs["ts"])
     np.testing.assert_allclose(ds["L3_already_prefixed"].values, src["already_prefixed"].values)
     np.testing.assert_allclose(ds["L3_existing_name"].values, src["L3_existing_name"].values)
     assert ds["L3_wind_speed"].attrs == src["wind_speed"].attrs
@@ -293,10 +454,11 @@ def test_coare36_to_netcdf_builtin_l3_exports_fall_back_to_wrapper_inputs_when_s
     np.testing.assert_allclose(ds["L3_wind_speed"].values, inputs["u"])
     np.testing.assert_allclose(ds["L3_air_pressure"].values, inputs["P"])
     assert ds["L3_wind_speed"].attrs == src["gill_wind_speed"].attrs
-    assert ds["L3_air_pressure"].attrs == {}
+    assert ds["L3_air_pressure"].attrs["units"] == "hPa"
+    assert "description" in ds["L3_air_pressure"].attrs
 
 
-def test_coare36_to_netcdf_builtin_l3_exports_prefer_source_dataset_when_available(tmp_path):
+def test_coare36_to_netcdf_builtin_l3_exports_keep_wrapper_values_and_source_metadata(tmp_path):
     N = 3
     inputs = _build_constant_inputs(N)
     out_path = tmp_path / "coare36_l3_wrapper_values.nc"
@@ -319,7 +481,7 @@ def test_coare36_to_netcdf_builtin_l3_exports_prefer_source_dataset_when_availab
 
     ds = coare36_to_netcdf(out_path, attrs_json, **inputs, source_dataset=src)
 
-    np.testing.assert_allclose(ds["L3_wind_speed"].values, src["wind_speed"].values)
-    np.testing.assert_allclose(ds["L3_air_pressure"].values, src["air_pressure"].values)
+    np.testing.assert_allclose(ds["L3_wind_speed"].values, inputs["u"])
+    np.testing.assert_allclose(ds["L3_air_pressure"].values, inputs["P"])
     assert ds["L3_wind_speed"].attrs == src["wind_speed"].attrs
     assert ds["L3_air_pressure"].attrs == src["air_pressure"].attrs
