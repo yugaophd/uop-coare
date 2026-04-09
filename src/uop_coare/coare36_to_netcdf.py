@@ -74,7 +74,7 @@ def _build_l3_dataarray(
     n_rows: int,
     output_dim: str,
     *,
-    source_var: xr.DataArray,
+    source_var: Optional[xr.DataArray] = None,
 ) -> Optional[xr.DataArray]:
     data = np.asarray(values.values if hasattr(values, "values") else values)
     if data.ndim == 0:
@@ -82,7 +82,38 @@ def _build_l3_dataarray(
     if data.ndim != 1 or data.size != n_rows:
         return None
 
-    return xr.DataArray(data, dims=(output_dim,), attrs=dict(source_var.attrs))
+    attrs = dict(source_var.attrs) if source_var is not None else {}
+    return xr.DataArray(data, dims=(output_dim,), attrs=attrs)
+
+
+def _l3_output_name(var_name: str) -> str:
+    return var_name if var_name.startswith("L3_") else f"L3_{var_name}"
+
+
+def _copy_prefixed_l3_variables(
+    ds_out: xr.Dataset,
+    source_dataset: Optional[xr.Dataset],
+    n_rows: int,
+    output_dim: str,
+    instrument_prefix: str | Iterable[str],
+) -> None:
+    if source_dataset is None:
+        return
+
+    prefixes = _normalize_prefixes(instrument_prefix)
+    for var_name, source_var in source_dataset.data_vars.items():
+        if var_name.startswith(prefixes):
+            continue
+
+        output_name = _l3_output_name(var_name)
+        data = np.asarray(source_var.values)
+        attrs = dict(source_var.attrs)
+
+        if data.ndim == 0:
+            ds_out[output_name] = xr.DataArray(data.item(), attrs=attrs)
+            continue
+        if data.ndim == 1 and data.size == n_rows:
+            ds_out[output_name] = xr.DataArray(data.copy(), dims=(output_dim,), attrs=attrs)
 
 
 def _sanitize_netcdf_attrs(attrs: Dict[str, Any]) -> Dict[str, Any]:
@@ -151,98 +182,128 @@ def coare36_to_netcdf(
     to_netcdf_kwargs: Optional[Dict[str, Any]] = None,
 ) -> xr.Dataset:
     """
-    Run COARE 3.6 and export outputs directly to a NetCDF file.
+    Run COARE 3.6, assemble an L4 ``xarray.Dataset``, and write it to NetCDF.
 
-    Calls ``coare36vn_zrf_et`` with the supplied meteorological inputs,
-    maps every output column to a named xarray variable (with CF-compliant
-    attributes from ``get_variables_info``), optionally copies instrument
-    metadata and original L3 inputs from a source dataset, writes the
-    assembled dataset to a NetCDF file at ``output_path``, and returns the
-    in-memory ``xr.Dataset``.
+    The wrapper calls ``coare36vn_zrf_et`` with the supplied meteorological
+    inputs, converts solver columns to named output variables using
+    ``get_variables_info()``, optionally copies instrument variables from an
+    L3 source dataset, optionally carries L3 variables into the L4 output as
+    ``L3_*`` variables, writes the dataset to ``output_path``, and returns the
+    in-memory dataset.
+
+    When ``source_dataset`` is provided, non-instrument variables are copied
+    into the L4 dataset with an ``L3_`` prefix while preserving their original
+    variable attributes. Variables already named ``L3_*`` keep that name. For
+    built-in preserved inputs such as ``L3_wind_speed`` and
+    ``L3_air_temperature``, the wrapper uses the direct wrapper inputs for data
+    values and can use ``input_vars_used`` to source attributes from alternate
+    L3 variables before the full L3 copy step overwrites them with the actual
+    source-dataset variable when available.
 
     Parameters
     ----------
-    - output_path: destination path for the NetCDF file. Parent directories
-      are created automatically if they do not exist.
-    - global_attrs_json: path to a JSON file whose top-level keys are merged
-      into the dataset's global attributes (highest priority, overrides
-      base and source attributes).
-
-    Required meteorological inputs (keyword-only):
-    - u: wind speed (m/s); 1-D array-like of length N.
-    - zu: height of the wind measurement (m); scalar or 1-D array.
-    - t: air temperature (degC); 1-D array-like of length N.
-    - zt: height of the air-temperature measurement (m); scalar or 1-D array.
-    - rh: relative humidity (%); 1-D array-like of length N.
-    - zq: height of the humidity measurement (m); scalar or 1-D array.
-    - P: surface atmospheric pressure (mb); 1-D array-like of length N.
-    - ts: sea surface (skin) temperature (degC); 1-D array-like of length N.
-    - sw_dn: downwelling shortwave radiation (W/m²); 1-D array-like of length N.
-    - lw_dn: downwelling longwave radiation (W/m²); 1-D array-like of length N.
-    - lat: latitude (degrees north); scalar or 1-D array-like.
-    - lon: longitude (degrees east); scalar or 1-D array-like.
-    - jd: fractional Julian day of year (e.g. output of ``calculate_jd``);
-      1-D array-like of length N.
-    - zi: boundary layer height (m); scalar or 1-D array-like.
-    - rain: rainfall rate (mm/hr); 1-D array-like of length N.
-    - Ss: sea surface salinity (PSU); scalar or 1-D array-like.
-
-    Optional COARE solver inputs (keyword-only):
-    - cp: phase speed of dominant ocean swell (m/s); pass ``None`` to omit
-      wave-state correction. Default ``None``.
-    - sigH: significant wave height (m); pass ``None`` to omit. Default ``None``.
-    - zrf_u: reference height for output wind speed (m). Default 10.0.
-    - zrf_t: reference height for output air temperature (m). Default 10.0.
-    - zrf_q: reference height for output specific humidity (m). Default 10.0.
-    - coolskin: when ``True`` (default) enable the cool-skin parameterisation
-      (jcoolx = 1 in the original MATLAB code).
-    - albedo: surface albedo method. ``"constant"`` uses a fixed value;
-      ``"Payne1972"`` computes solar-elevation-dependent albedo. Default
-      ``"constant"``.
-    - wind_direction: meteorological wind direction (degrees clockwise from
-      north); only used when ``current_available`` is True. Default ``None``.
-    - payne_min_solar_elev_deg: minimum solar elevation angle (degrees) below
-      which the Payne 1972 albedo lookup returns a floor value. Only used
-      when ``albedo="Payne1972"``. Default 2.0.
-    - auto_plot: when ``True``, the solver produces diagnostic plots. Default
-      ``False``.
-
-    Dataset construction options (keyword-only):
-    - source_dataset: optional xarray Dataset whose variables will be
-      inspected for instrument metadata (prefix ``instrument_prefix``) and
-      as a metadata source for preserved wrapper inputs. Default ``None``.
-    - instrument_prefix: prefix or prefixes used to identify instrument-
-      metadata variables in ``source_dataset`` that should be copied to the
-      output. Default ``"INST_"``.
-    - input_vars_used: optional mapping of ``{output_name: source_variable_name}``
-      used both to override the source variable for built-in preserved
-      ``L3_*`` outputs and to add additional 1-D variables from
-      ``source_dataset`` to the output dataset. Default ``None``.
-    - sea_water_temperature: optional array-like of sea-water temperature
-      values (length N) to include as the variable ``"L3_sea_water_temperature"``.
-      Default ``None``.
-    - sea_water_temperature_attrs: additional CF attributes (e.g. ``units``,
-      ``long_name``, ``standard_name``) for the ``"L3_sea_water_temperature"``
-      variable. Keys not provided fall back to sensible defaults. Default
-      ``None``.
-    - instrument_config: mapping of ``{role: instrument_name}`` added to the
-      global attributes as ``instrument_<role>``. Default ``None``.
-    - current_available: when ``True``, annotates ``"L3_wind_direction"`` and
-      ``"L3_wind_speed"`` as being relative to the surface current. Default
-      ``False``.
-    - output_dim: name of the output dimension (e.g. ``"time"``). Default
-      ``"time"``.
-    - output_coord: coordinate values for ``output_dim``; must have length N.
-      When ``None`` an integer range ``0…N-1`` is used. Default ``None``.
-    - dataset_attrs: extra global attributes merged last (after
-      ``global_attrs_json``). Default ``None``.
-    - to_netcdf_kwargs: additional keyword arguments forwarded verbatim to
-      ``xr.Dataset.to_netcdf``. Default ``None``.
+    output_path
+        Destination path for the NetCDF file. Parent directories are created
+        automatically.
+    global_attrs_json
+        Path to a JSON file containing global attributes to merge into the
+        output dataset.
+    u
+        Wind speed in m/s. Scalar or 1-D array-like.
+    zu
+        Height of the wind measurement in m. Scalar or 1-D array-like.
+    t
+        Air temperature in degC. Scalar or 1-D array-like.
+    zt
+        Height of the air-temperature measurement in m. Scalar or 1-D
+        array-like.
+    rh
+        Relative humidity in percent. Scalar or 1-D array-like.
+    zq
+        Height of the humidity measurement in m. Scalar or 1-D array-like.
+    P
+        Surface atmospheric pressure in mb. Scalar or 1-D array-like.
+    ts
+        Sea-surface temperature used by COARE, in degC. Scalar or 1-D
+        array-like.
+    sw_dn
+        Downwelling shortwave radiation in W/m^2. Scalar or 1-D array-like.
+    lw_dn
+        Downwelling longwave radiation in W/m^2. Scalar or 1-D array-like.
+    lat
+        Latitude in degrees north. Scalar or 1-D array-like.
+    lon
+        Longitude in degrees east. Scalar or 1-D array-like.
+    jd
+        Fractional Julian day of year. 1-D array-like of length ``N``.
+    zi
+        Boundary-layer height in m. Scalar or 1-D array-like.
+    rain
+        Rain rate in mm/hr. Scalar or 1-D array-like.
+    Ss
+        Sea-surface salinity in PSU. Scalar or 1-D array-like.
+    cp
+        Optional phase speed of dominant swell in m/s.
+    sigH
+        Optional significant wave height in m.
+    zrf_u
+        Reference height for output wind speed in m.
+    zrf_t
+        Reference height for output air temperature in m.
+    zrf_q
+        Reference height for output specific humidity in m.
+    coolskin
+        If ``True``, enable the cool-skin parameterization.
+    albedo
+        Surface albedo method. Supported values are ``"constant"`` and
+        ``"Payne1972"``.
+    wind_direction
+        Meteorological wind direction in degrees clockwise from north. Only
+        used when ``current_available`` is ``True``.
+    payne_min_solar_elev_deg
+        Minimum solar elevation angle used by the Payne 1972 albedo lookup.
+    source_dataset
+        Optional L3 ``xarray.Dataset``. Variables whose names start with
+        ``instrument_prefix`` are copied into the output unchanged. Other
+        scalar variables and 1-D variables of length ``N`` are copied into the
+        output as ``L3_*`` variables with their metadata preserved.
+    instrument_prefix
+        Prefix, or iterable of prefixes, used to identify instrument variables
+        in ``source_dataset``.
+    input_vars_used
+        Optional mapping of ``{output_name: source_variable_name}``. This is
+        primarily useful for built-in preserved ``L3_*`` outputs when the
+        desired source-variable metadata lives under a different L3 variable
+        name. It can also add extra 1-D variables from ``source_dataset`` to
+        the output.
+    sea_water_temperature
+        Optional sea-water temperature array to include as
+        ``L3_sea_water_temperature``.
+    sea_water_temperature_attrs
+        Optional attribute overrides for ``L3_sea_water_temperature``.
+    instrument_config
+        Optional mapping of ``{role: instrument_name}`` written into global
+        attributes as ``instrument_<role>``.
+    current_available
+        If ``True``, annotate ``L3_wind_speed`` and ``L3_wind_direction`` as
+        relative to the surface current.
+    output_dim
+        Name of the output dimension.
+    output_coord
+        Coordinate values for ``output_dim``. Must have length ``N`` when
+        provided.
+    dataset_attrs
+        Additional global attributes merged after the JSON and source-dataset
+        attributes.
+    auto_plot
+        If ``True``, enable COARE diagnostic plotting.
+    to_netcdf_kwargs
+        Extra keyword arguments forwarded to ``xr.Dataset.to_netcdf``.
 
     Returns
     -------
-    - xr.Dataset: the assembled dataset (same object written to disk), with
-      CF-compliant variable attributes and global metadata.
+    xr.Dataset
+        The assembled L4 dataset that was written to disk.
     """
     # Step 1: load required custom global attributes from JSON.
     custom_global_attrs = _load_global_attrs_json(global_attrs_json)
@@ -328,7 +389,7 @@ def coare36_to_netcdf(
         "L3_air_temperature": (t, "air_temperature"),
         "L3_relative_humidity": (rh, "relative_humidity"),
         "L3_air_pressure": (P, "air_pressure"),
-        "L3_sea_surface_skin_temperature": (ts, "sea_surface_skin_temperature"),
+        "L3_sea_surface_temperature": (ts, "sea_surface_temperature"),
         "L3_downwelling_shortwave_flux": (sw_dn, "downwelling_shortwave_flux"),
         "L3_downwelling_longwave_flux": (lw_dn, "downwelling_longwave_flux"),
         "L3_latitude": (lat_arr, "latitude"),
@@ -346,11 +407,11 @@ def coare36_to_netcdf(
     preserved_inputs.update({name: spec for name, spec in optional_inputs.items() if spec[0] is not None})
 
     if source_dataset is not None:
-        for output_name, (_, source_name) in preserved_inputs.items():
+        for output_name, (values, source_name) in preserved_inputs.items():
             resolved_source_name = input_vars_used.get(output_name, source_name) if input_vars_used else source_name
-            source_var = source_dataset[resolved_source_name]
+            source_var = source_dataset.get(resolved_source_name)
             data_array = _build_l3_dataarray(
-                source_var,
+                values,
                 n_rows,
                 output_dim,
                 source_var=source_var,
@@ -358,7 +419,10 @@ def coare36_to_netcdf(
             if data_array is not None:
                 ds[output_name] = data_array
 
-    # Step 8: append additional source variables if requested by mapping.
+    # Step 8: copy L3 source variables directly with an L3_ prefix.
+    _copy_prefixed_l3_variables(ds, source_dataset, n_rows, output_dim, instrument_prefix)
+
+    # Step 9: append additional source variables if requested by mapping.
     if source_dataset is not None and input_vars_used:
         for output_name, input_var in input_vars_used.items():
             if output_name in preserved_inputs:
@@ -374,7 +438,7 @@ def coare36_to_netcdf(
             if data_array is not None:
                 ds[output_name] = data_array
 
-    # Step 9: optionally append sea-water temperature input variable.
+    # Step 10: optionally append sea-water temperature input variable.
     if sea_water_temperature is not None:
         ts_vals = np.asarray(sea_water_temperature, dtype=float)
         if ts_vals.ndim == 0:
@@ -394,14 +458,14 @@ def coare36_to_netcdf(
                 },
             )
 
-    # Step 10: add optional comments when relative wind/current path was used.
+    # Step 11: add optional comments when relative wind/current path was used.
     if current_available:
         if "L3_wind_direction" in ds:
             ds["L3_wind_direction"].attrs["comment"] = "Wind direction relative to surface current"
         if "L3_wind_speed" in ds:
             ds["L3_wind_speed"].attrs["comment"] = "Wind speed relative to surface current"
 
-    # Step 11: create scalar metadata used by COARE and used in global attrs.
+    # Step 12: create scalar metadata used by COARE and used in global attrs.
     zu_scalar = _as_float_attr(zu, "zu")
     zt_scalar = _as_float_attr(zt, "zt")
     zq_scalar = _as_float_attr(zq, "zq")
@@ -409,7 +473,7 @@ def coare36_to_netcdf(
     zrf_t_scalar = float(zrf_t)
     zrf_q_scalar = float(zrf_q)
 
-    # Step 12: write global metadata.
+    # Step 13: write global metadata.
     base_from_source = dict(source_dataset.attrs) if source_dataset is not None else {}
     base_attrs = {
         "title": "COARE 3.6 air-sea flux outputs",
@@ -440,7 +504,7 @@ def coare36_to_netcdf(
         base_attrs.update(dataset_attrs)
     ds.attrs.update(base_attrs)
 
-    # Step 13: write NetCDF file and return in-memory dataset.
+    # Step 14: write NetCDF file and return in-memory dataset.
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     netcdf_kwargs = dict(to_netcdf_kwargs or {})

@@ -173,6 +173,57 @@ def test_coare36_to_netcdf_copies_l3_source_variables_with_prefixed_names(tmp_pa
     assert ds["INST_Gill"].attrs == src["INST_Gill"].attrs
 
 
+def test_coare36_to_netcdf_copies_all_l3_source_variables_with_prefix(tmp_path):
+    N = 3
+    inputs = _build_constant_inputs(N)
+    out_path = tmp_path / "coare36_l3_all_prefixed.nc"
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text('{"project": "unit-test"}', encoding="utf-8")
+    src = xr.Dataset(
+        {
+            "wind_speed": xr.DataArray(
+                np.full(N, 7.5),
+                dims=("sample",),
+                attrs={"units": "m/s", "long_name": "source wind speed"},
+            ),
+            "sea_surface_temperature": xr.DataArray(
+                np.full(N, 19.5),
+                dims=("sample",),
+                attrs={"units": "degC", "long_name": "bulk sea surface temperature"},
+            ),
+            "already_prefixed": xr.DataArray(
+                np.full(N, 1.0),
+                dims=("sample",),
+                attrs={"long_name": "custom l3 field"},
+            ),
+            "L3_existing_name": xr.DataArray(
+                np.full(N, 2.0),
+                dims=("sample",),
+                attrs={"long_name": "already prefixed in source"},
+            ),
+            "station_name": xr.DataArray("WHOI", attrs={"long_name": "station identifier"}),
+            "INST_Gill": xr.DataArray(1.0, attrs={"serial_number": "G-123"}),
+        }
+    )
+
+    ds = coare36_to_netcdf(out_path, attrs_json, **inputs, source_dataset=src)
+
+    np.testing.assert_allclose(ds["L3_wind_speed"].values, src["wind_speed"].values)
+    np.testing.assert_allclose(
+        ds["L3_sea_surface_temperature"].values,
+        src["sea_surface_temperature"].values,
+    )
+    np.testing.assert_allclose(ds["L3_already_prefixed"].values, src["already_prefixed"].values)
+    np.testing.assert_allclose(ds["L3_existing_name"].values, src["L3_existing_name"].values)
+    assert ds["L3_wind_speed"].attrs == src["wind_speed"].attrs
+    assert ds["L3_sea_surface_temperature"].attrs == src["sea_surface_temperature"].attrs
+    assert ds["L3_already_prefixed"].attrs == src["already_prefixed"].attrs
+    assert ds["L3_existing_name"].attrs == src["L3_existing_name"].attrs
+    assert ds["L3_station_name"].item() == "WHOI"
+    assert ds["L3_station_name"].attrs == src["station_name"].attrs
+    assert "L3_INST_Gill" not in ds
+
+
 def test_coare36_to_netcdf_uses_input_vars_used_for_builtin_l3_exports(tmp_path):
     N = 3
     inputs = _build_constant_inputs(N)
@@ -211,3 +262,64 @@ def test_coare36_to_netcdf_uses_input_vars_used_for_builtin_l3_exports(tmp_path)
 
     assert ds["L3_wind_speed"].attrs == src["gill_wind_speed"].attrs
     assert ds["L3_air_temperature"].attrs == src["wxt_air_temperature"].attrs
+    np.testing.assert_allclose(ds["L3_wind_speed"].values, inputs["u"])
+    np.testing.assert_allclose(ds["L3_air_temperature"].values, inputs["t"])
+
+
+def test_coare36_to_netcdf_builtin_l3_exports_fall_back_to_wrapper_inputs_when_source_var_missing(tmp_path):
+    N = 3
+    inputs = _build_constant_inputs(N)
+    out_path = tmp_path / "coare36_l3_wrapper_fallback.nc"
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text('{"project": "unit-test"}', encoding="utf-8")
+    src = xr.Dataset(
+        {
+            "gill_wind_speed": xr.DataArray(
+                np.full(N, 99.0),
+                dims=("sample",),
+                attrs={"units": "m/s", "long_name": "Gill wind speed"},
+            ),
+        }
+    )
+
+    ds = coare36_to_netcdf(
+        out_path,
+        attrs_json,
+        **inputs,
+        source_dataset=src,
+        input_vars_used={"L3_wind_speed": "gill_wind_speed"},
+    )
+
+    np.testing.assert_allclose(ds["L3_wind_speed"].values, inputs["u"])
+    np.testing.assert_allclose(ds["L3_air_pressure"].values, inputs["P"])
+    assert ds["L3_wind_speed"].attrs == src["gill_wind_speed"].attrs
+    assert ds["L3_air_pressure"].attrs == {}
+
+
+def test_coare36_to_netcdf_builtin_l3_exports_prefer_source_dataset_when_available(tmp_path):
+    N = 3
+    inputs = _build_constant_inputs(N)
+    out_path = tmp_path / "coare36_l3_wrapper_values.nc"
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text('{"project": "unit-test"}', encoding="utf-8")
+    src = xr.Dataset(
+        {
+            "wind_speed": xr.DataArray(
+                np.full(N, 99.0),
+                dims=("sample",),
+                attrs={"units": "m/s", "long_name": "source wind speed"},
+            ),
+            "air_pressure": xr.DataArray(
+                np.full(N, 900.0),
+                dims=("sample",),
+                attrs={"units": "mb", "long_name": "source air pressure"},
+            ),
+        }
+    )
+
+    ds = coare36_to_netcdf(out_path, attrs_json, **inputs, source_dataset=src)
+
+    np.testing.assert_allclose(ds["L3_wind_speed"].values, src["wind_speed"].values)
+    np.testing.assert_allclose(ds["L3_air_pressure"].values, src["air_pressure"].values)
+    assert ds["L3_wind_speed"].attrs == src["wind_speed"].attrs
+    assert ds["L3_air_pressure"].attrs == src["air_pressure"].attrs

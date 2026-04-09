@@ -116,6 +116,7 @@ from uop_coare import get_variables_info
 - `coolskin=True` runs the cool-skin model; set `coolskin=False` to disable it.
 - `albedo="constant"` uses a constant albedo correction; `albedo="Payne1972"` uses zenith-angle varying albedo from Payne (1972).
 - `coare36_to_netcdf` accepts the same core inputs as `coare36vn_zrf_et` and writes a CF-convention NetCDF file with all output variables named and attributed from `get_variables_info`.
+- When `source_dataset` is provided to `coare36_to_netcdf`, instrument variables are copied through unchanged and non-instrument L3 variables are carried into the L4 file as `L3_*` variables with their metadata preserved.
 - All COARE-derived outputs carry `coverage_content_type: modelResult`; copied L3 inputs carry `physicalMeasurement`.
 - Inputs may be scalars or vectors. See the function docstring for full details.
 - `jd` can be numeric yearday or datetime-like inputs (UTC); datetime inputs are converted to yearday internally.
