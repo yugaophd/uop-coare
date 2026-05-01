@@ -175,13 +175,11 @@ def test_get_variables_info_reference_height_metadata_defaults():
             "neutral value of air specific humidity at reference height (2 m)",
             2.0,
         ),
+        "air_density_at_reference_height": ("density of air at reference height (2 m)", 2.0),
     }
     for name, (long_name, reference_height_m) in expected.items():
         assert info[name]["long_name"] == long_name
         assert info[name]["reference_height_m"] == reference_height_m
-    density_metadata = info["air_density_at_reference_height"]
-    assert density_metadata["long_name"] == "density of air at reference height"
-    assert "reference_height_m" not in density_metadata
 
 
 def test_coare36_to_netcdf_resolves_exact_instrument_names_in_attrs(tmp_path):

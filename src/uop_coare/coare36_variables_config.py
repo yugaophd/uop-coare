@@ -172,7 +172,7 @@ variables_info = {
     # 17. Monin-Obukhov stability parameter
     "stability_parameter": 
         {"units": "1", 
-        "long_name": "Monin-Obukhov stability parameter zu/L",
+        "long_name": "Monin-Obukhov stability parameter, wind measurement height divided by Obukhov length",
         "coverage_content_type": "modelResult",
         "valid_min": -10.0,
         "valid_max": 10.0
@@ -304,8 +304,8 @@ variables_info = {
     "latent_heat_of_vaporization": 
         {"units": "J/kg", 
         # "standard_name": "surface_latent_heat_flux_due_to_evaporation",
-        "long_name": "latent heat of vaporization is the amount of heat required to evaporate 1 kg of water",
-        # "description": "positive when heating the ocean",  #TOM
+        "long_name": "latent heat of vaporization",
+        "description": "latent heat of vaporization is the amount of heat required to evaporate 1 kg of water",  #TOM
         # "reverse_sign": True,
         "coverage_content_type": "modelResult",
         "valid_min": 2.0e6,
@@ -326,7 +326,7 @@ variables_info = {
     "neutral_wind_speed": 
         {"units": "m/s", 
         "standard_name": "wind_speed",
-        "long_name": "neutral value of wind speed at zu",
+        "long_name": "neutral wind speed at wind measurement height",
         "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 50.0
@@ -591,6 +591,7 @@ _REFERENCE_HEIGHT_VARIABLES = {
         "zrf_q",
         "neutral value of air specific humidity at reference height ({height} m)",
     ),
+    "air_density_at_reference_height": ("zrf_t", "density of air at reference height ({height} m)"),
 }
 
 
