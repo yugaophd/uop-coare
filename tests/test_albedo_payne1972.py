@@ -357,7 +357,7 @@ def test_albedo_stop_triggers_with_bad_albedo(monkeypatch, l4_sample_arrays):
         coare36vn_zrf_et(**inputs, albedo="Payne1972", return_albedo=True)
 
 
-def test_borderline_realistic_high_sw_high_albedo_case_does_not_raise():
+def test_borderline_realistic_high_sw_high_albedo_case_raises():
     sw_dn = np.array([501.9])
     lat = np.array([36.85])
     lon = np.array([-124.41])
@@ -365,14 +365,8 @@ def test_borderline_realistic_high_sw_high_albedo_case_does_not_raise():
     jd = calculate_jd(times)
 
     inputs = _build_constant_inputs(sw_dn, lat, lon, jd)
-    A = coare36vn_zrf_et(**inputs, albedo="Payne1972", return_albedo=True)
-
-    alb = A[:, -4]
-    psi_sw = A[:, -1]
-
-    assert alb[0] > 0.1
-    assert alb[0] < 0.12
-    assert np.isclose(psi_sw[0], 21.8, atol=0.5)
+    with pytest.raises(ValueError, match=r"sw_dn > 500 W/m\^2 while albedo > 0\.1"):
+        coare36vn_zrf_et(**inputs, albedo="Payne1972", return_albedo=True)
 
 
 def test_longitude_plus_180_with_same_utc_jd_triggers_real_high_albedo_check():
@@ -393,6 +387,6 @@ def test_longitude_plus_180_with_same_utc_jd_triggers_real_high_albedo_check():
     assert np.allclose(A_base[:, -4], 0.0, rtol=0.0, atol=0.0)
 
     inputs_shifted = _build_constant_inputs(sw_dn, lat, lon_shifted, jd)
-    with pytest.raises(ValueError, match=r"sw_dn > 500 W/m\^2 while albedo > 0\.12"):
+    with pytest.raises(ValueError, match=r"sw_dn > 500 W/m\^2 while albedo > 0\.1"):
         coare36vn_zrf_et(**inputs_shifted, albedo="Payne1972", return_albedo=True)
 
