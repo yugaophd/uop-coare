@@ -346,6 +346,67 @@ def _sanitize_netcdf_attrs(attrs: Dict[str, Any]) -> Dict[str, Any]:
     return clean
 
 
+def _add_coare_height_variables(
+    ds_out: xr.Dataset,
+    *,
+    zu: float,
+    zt: float,
+    zq: float,
+    zrf_u: float,
+    zrf_t: float,
+    zrf_q: float,
+) -> None:
+    """Add scalar COARE observation and reference heights as dataset variables."""
+    ds_out["coare_wind_observation_height"] = xr.DataArray(
+        float(zu),
+        attrs={
+            "units": "m",
+            "long_name": "COARE wind observation height",
+            "description": "Wind measurement height passed to COARE (zu)",
+        },
+    )
+    ds_out["coare_air_temperature_observation_height"] = xr.DataArray(
+        float(zt),
+        attrs={
+            "units": "m",
+            "long_name": "COARE air temperature observation height",
+            "description": "Air temperature measurement height passed to COARE (zt)",
+        },
+    )
+    ds_out["coare_humidity_observation_height"] = xr.DataArray(
+        float(zq),
+        attrs={
+            "units": "m",
+            "long_name": "COARE humidity observation height",
+            "description": "Humidity measurement height passed to COARE (zq)",
+        },
+    )
+    ds_out["coare_wind_reference_height"] = xr.DataArray(
+        float(zrf_u),
+        attrs={
+            "units": "m",
+            "long_name": "COARE wind reference height",
+            "description": "Wind reference height used by COARE outputs (zrf_u)",
+        },
+    )
+    ds_out["coare_air_temperature_reference_height"] = xr.DataArray(
+        float(zrf_t),
+        attrs={
+            "units": "m",
+            "long_name": "COARE air temperature reference height",
+            "description": "Air temperature reference height used by COARE outputs (zrf_t)",
+        },
+    )
+    ds_out["coare_humidity_reference_height"] = xr.DataArray(
+        float(zrf_q),
+        attrs={
+            "units": "m",
+            "long_name": "COARE humidity reference height",
+            "description": "Humidity reference height used by COARE outputs (zrf_q)",
+        },
+    )
+
+
 def _load_global_attrs_json(global_attrs_json: str | Path) -> Dict[str, Any]:
     path = Path(global_attrs_json)
     if not path.exists():
@@ -709,6 +770,16 @@ def coare36_to_netcdf(
     zrf_u_scalar = float(zrf_u)
     zrf_t_scalar = float(zrf_t)
     zrf_q_scalar = float(zrf_q)
+
+    _add_coare_height_variables(
+        ds,
+        zu=zu_scalar,
+        zt=zt_scalar,
+        zq=zq_scalar,
+        zrf_u=zrf_u_scalar,
+        zrf_t=zrf_t_scalar,
+        zrf_q=zrf_q_scalar,
+    )
 
     # Step 13: write global metadata.
     base_from_source = dict(source_dataset.attrs) if source_dataset is not None else {}
