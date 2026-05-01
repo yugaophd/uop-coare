@@ -8,7 +8,12 @@ from typing import Any, Dict, Iterable, Optional
 import numpy as np
 import xarray as xr
 
-from .coare36_variables_config import get_variables_info
+from .coare36_variables_config import (
+    DEFAULT_REFERENCE_AIR_TEMPERATURE_HEIGHT_M,
+    DEFAULT_REFERENCE_HUMIDITY_HEIGHT_M,
+    DEFAULT_REFERENCE_WIND_HEIGHT_M,
+    get_variables_info,
+)
 from .coare36vn_zrf_et import coare36vn_zrf_et
 
 
@@ -374,9 +379,9 @@ def coare36_to_netcdf(
     Ss,
     cp=None,
     sigH=None,
-    zrf_u: float = 10.0,
-    zrf_t: float = 10.0,
-    zrf_q: float = 10.0,
+    zrf_u: float = DEFAULT_REFERENCE_WIND_HEIGHT_M,
+    zrf_t: float = DEFAULT_REFERENCE_AIR_TEMPERATURE_HEIGHT_M,
+    zrf_q: float = DEFAULT_REFERENCE_HUMIDITY_HEIGHT_M,
     coolskin: bool = True,
     albedo: str = "constant",
     wind_direction=None,
@@ -471,7 +476,9 @@ def coare36_to_netcdf(
         ``"Payne1972"``.
     wind_direction
         Meteorological wind direction in degrees clockwise from north. Only
-        used when ``current_available`` is ``True``.
+        used when ``current_available`` is ``True``. This wrapper does not
+        derive current-relative wind internally; pass current-relative wind
+        in ``u`` only when you computed it upstream.
     payne_min_solar_elev_deg
         Minimum solar elevation angle used by the Payne 1972 albedo lookup.
     source_dataset
@@ -498,7 +505,10 @@ def coare36_to_netcdf(
         attributes as ``instrument_<role>``.
     current_available
         If ``True``, annotate ``L3_wind_speed`` and ``L3_wind_direction`` as
-        relative to the surface current.
+        relative to the surface current. This flag does not modify ``u`` or
+        perform any wind/current adjustment. When surface current is missing,
+        callers must pass true wind in ``u`` upstream rather than substituting
+        zero wind.
     output_dim
         Name of the output dimension.
     output_coord
@@ -556,7 +566,12 @@ def coare36_to_netcdf(
     resolved_instrument_config = _resolve_instrument_config(source_dataset, instrument_config)
 
     # Step 3: validate output shape against metadata-driven variable list.
-    variables_info = get_variables_info(albedo_method=albedo)
+    variables_info = get_variables_info(
+        albedo_method=albedo,
+        zrf_u=zrf_u,
+        zrf_t=zrf_t,
+        zrf_q=zrf_q,
+    )
     variable_names = list(variables_info.keys())
     n_rows, n_cols = solver_output.shape
     if n_cols < len(variable_names):
@@ -679,7 +694,8 @@ def coare36_to_netcdf(
                 },
             )
 
-    # Step 11: add optional comments when relative wind/current path was used.
+    # Step 11: add optional comments when callers supplied current-relative wind.
+    # This is metadata-only and does not alter the wind values passed to COARE.
     if current_available:
         if "L3_wind_direction" in ds:
             ds["L3_wind_direction"].attrs["comment"] = "Wind direction relative to surface current"

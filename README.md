@@ -116,6 +116,11 @@ from uop_coare import get_variables_info
 - `coolskin=True` runs the cool-skin model; set `coolskin=False` to disable it.
 - `albedo="constant"` uses a constant albedo correction; `albedo="Payne1972"` uses zenith-angle varying albedo from Payne (1972).
 - `coare36_to_netcdf` accepts the same core inputs as `coare36vn_zrf_et` and writes a CF-convention NetCDF file with all output variables named and attributed from `get_variables_info`.
+- NetCDF reference-height metadata defaults to 10 m for wind and 2 m for air temperature and humidity.
+- The air-density output is COARE `rhoa`, computed inside the solver from `t`, `rh`, and pressure adjusted to `zt`; it is not a caller-supplied input and is not recomputed from the reference-height profile outputs.
+- `uop_coare` does not preprocess wind into current-relative wind internally. Pass current-relative wind in `u` only if you computed it upstream; otherwise pass true wind.
+- `current_available=True` in `coare36_to_netcdf` only annotates L3 wind metadata as current-relative. It does not change wind values or perform any wind/current adjustment.
+- If surface current is missing, callers should handle that upstream by passing true wind, not by substituting `0 m/s` wind.
 - When `source_dataset` is provided to `coare36_to_netcdf`, instrument variables are copied through unchanged and non-instrument L3 variables are carried into the L4 file as `L3_*` variables with their metadata preserved.
 - All COARE-derived outputs carry `coverage_content_type: modelResult`; copied L3 inputs carry `physicalMeasurement`.
 - Inputs may be scalars or vectors. See the function docstring for full details.

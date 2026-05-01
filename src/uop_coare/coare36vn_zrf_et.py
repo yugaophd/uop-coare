@@ -544,11 +544,13 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
                 "Check time/jd, longitude sign (E/W), and albedo settings."
             )
 
-        high_sw_high_albedo_mask = np.isfinite(sw_dn) & np.isfinite(alb) & (sw_dn > 500.0) & (alb > 0.1)
+        # Payne albedo can stay a bit above 0.1 at modest solar elevation, so
+        # keep this geometry guard focused on more clearly inconsistent cases.
+        high_sw_high_albedo_mask = np.isfinite(sw_dn) & np.isfinite(alb) & (sw_dn > 500.0) & (alb > 0.12)
         if np.any(high_sw_high_albedo_mask):
             count = int(np.count_nonzero(high_sw_high_albedo_mask))
             raise ValueError(
-                f"Albedo error: {count} sample(s) have sw_dn > 500 W/m^2 while albedo > 0.1. "
+                f"Albedo error: {count} sample(s) have sw_dn > 500 W/m^2 while albedo > 0.12. "
                 "Check time/jd, longitude sign (E/W), and albedo settings."
             )
     

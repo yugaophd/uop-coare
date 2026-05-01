@@ -122,6 +122,68 @@ def test_coare36_to_netcdf_writes_file_and_metadata(tmp_path):
         assert saved["L3_wind_speed"].attrs["comment"] == "measured by source L3 pipeline"
 
 
+def test_coare36_to_netcdf_reference_height_metadata_uses_runtime_inputs(tmp_path):
+    N = 3
+    inputs = _build_constant_inputs(N)
+    out_path = tmp_path / "coare36_reference_height_metadata.nc"
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text("{}", encoding="utf-8")
+
+    ds = coare36_to_netcdf(
+        out_path,
+        attrs_json,
+        **inputs,
+        zrf_u=10,
+        zrf_t=2,
+        zrf_q=2,
+    )
+
+    expected = {
+        "wind_speed_at_reference_height": ("wind speed at reference height (10 m)", 10.0),
+        "neutral_wind_speed_at_reference_height": ("neutral wind speed at reference height (10 m)", 10.0),
+        "air_temperature_at_reference_height": ("air temperature at reference height (2 m)", 2.0),
+        "neutral_air_temperature_at_reference_height": (
+            "neutral value of air temperature at reference height (2 m)",
+            2.0,
+        ),
+        "specific_humidity_at_reference_height": ("air specific humidity at reference height (2 m)", 2.0),
+        "relative_humidity_at_reference_height": ("air relative humidity at reference height (2 m)", 2.0),
+        "neutral_specific_humidity_at_reference_height": (
+            "neutral value of air specific humidity at reference height (2 m)",
+            2.0,
+        ),
+    }
+    for name, (long_name, reference_height_m) in expected.items():
+        assert ds[name].attrs["long_name"] == long_name
+        assert ds[name].attrs["reference_height_m"] == reference_height_m
+
+
+def test_get_variables_info_reference_height_metadata_defaults():
+    info = get_variables_info()
+
+    expected = {
+        "wind_speed_at_reference_height": ("wind speed at reference height (10 m)", 10.0),
+        "neutral_wind_speed_at_reference_height": ("neutral wind speed at reference height (10 m)", 10.0),
+        "air_temperature_at_reference_height": ("air temperature at reference height (2 m)", 2.0),
+        "neutral_air_temperature_at_reference_height": (
+            "neutral value of air temperature at reference height (2 m)",
+            2.0,
+        ),
+        "specific_humidity_at_reference_height": ("air specific humidity at reference height (2 m)", 2.0),
+        "relative_humidity_at_reference_height": ("air relative humidity at reference height (2 m)", 2.0),
+        "neutral_specific_humidity_at_reference_height": (
+            "neutral value of air specific humidity at reference height (2 m)",
+            2.0,
+        ),
+    }
+    for name, (long_name, reference_height_m) in expected.items():
+        assert info[name]["long_name"] == long_name
+        assert info[name]["reference_height_m"] == reference_height_m
+    density_metadata = info["air_density_at_reference_height"]
+    assert density_metadata["long_name"] == "density of air at reference height"
+    assert "reference_height_m" not in density_metadata
+
+
 def test_coare36_to_netcdf_resolves_exact_instrument_names_in_attrs(tmp_path):
     N = 3
     inputs = _build_constant_inputs(N)
@@ -228,6 +290,10 @@ def test_coare36_to_netcdf_preserves_full_coare_inputs_as_variables(tmp_path):
     attrs_json.write_text("{}", encoding="utf-8")
 
     ds = coare36_to_netcdf(out_path, attrs_json, **inputs)
+
+    assert ds.attrs["reference_wind_height_m"] == 10.0
+    assert ds.attrs["reference_air_temperature_height_m"] == 2.0
+    assert ds.attrs["reference_humidity_height_m"] == 2.0
 
     expected = {
         "L3_wind_speed": np.full(N, 5.0),
@@ -485,3 +551,24 @@ def test_coare36_to_netcdf_builtin_l3_exports_keep_wrapper_values_and_source_met
     np.testing.assert_allclose(ds["L3_air_pressure"].values, inputs["P"])
     assert ds["L3_wind_speed"].attrs == src["wind_speed"].attrs
     assert ds["L3_air_pressure"].attrs == src["air_pressure"].attrs
+
+
+def test_coare36_to_netcdf_current_available_only_updates_metadata(tmp_path):
+    N = 3
+    inputs = _build_constant_inputs(N)
+    out_path = tmp_path / "coare36_current_metadata_only.nc"
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text("{}", encoding="utf-8")
+
+    ds = coare36_to_netcdf(
+        out_path,
+        attrs_json,
+        **inputs,
+        current_available=True,
+        wind_direction=np.full(N, 270.0),
+    )
+
+    np.testing.assert_allclose(ds["L3_wind_speed"].values, inputs["u"])
+    np.testing.assert_allclose(ds["L3_wind_direction"].values, 270.0)
+    assert ds["L3_wind_speed"].attrs["comment"] == "Wind speed relative to surface current"
+    assert ds["L3_wind_direction"].attrs["comment"] == "Wind direction relative to surface current"

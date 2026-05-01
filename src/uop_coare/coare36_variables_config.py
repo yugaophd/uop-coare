@@ -1,6 +1,8 @@
 import copy
 
-reference_height = 3.0 #m, change the reference height here
+DEFAULT_REFERENCE_WIND_HEIGHT_M = 10.0
+DEFAULT_REFERENCE_AIR_TEMPERATURE_HEIGHT_M = 2.0
+DEFAULT_REFERENCE_HUMIDITY_HEIGHT_M = 2.0
 
 variables_info = {
     # 1. friction velocity (usr)
@@ -212,7 +214,7 @@ variables_info = {
     "wind_speed_at_reference_height": {
         "units": "m/s", 
         "standard_name": "wind_speed",
-        "long_name": f"wind speed at {reference_height} m",
+        "long_name": "wind speed at reference height",
         "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 50.0
@@ -222,7 +224,7 @@ variables_info = {
     "air_temperature_at_reference_height": {
         "units": "degC", 
         "standard_name": "air_temperature",
-        "long_name": f"air temperature at {reference_height} meters",
+        "long_name": "air temperature at reference height",
         "coverage_content_type": "modelResult",
         "valid_min": -10.0,
         "valid_max": 40.0
@@ -232,7 +234,7 @@ variables_info = {
     "specific_humidity_at_reference_height": {
         "units": "g/kg", 
         "standard_name": "specific_humidity",
-        "long_name": f"air specific humidity at {reference_height} meters",
+        "long_name": "air specific humidity at reference height",
         "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 30.0
@@ -242,7 +244,7 @@ variables_info = {
     "relative_humidity_at_reference_height": {
         "units": "%", 
         "standard_name": "relative_humidity",
-        "long_name": f"air relative humidity at {reference_height} meters",
+        "long_name": "air relative humidity at reference height",
         "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 100.0
@@ -252,7 +254,7 @@ variables_info = {
     "neutral_wind_speed_at_reference_height": {
         "units": "m/s", 
         "standard_name": "wind_speed",
-        "long_name": f"neutral wind speed at {reference_height} meters",
+        "long_name": "neutral wind speed at reference height",
         "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 50.0
@@ -262,7 +264,7 @@ variables_info = {
     "neutral_air_temperature_at_reference_height": {
         "units": "degC", 
         "standard_name": "air_temperature",
-        "long_name": f"neutral value of air temperature at {reference_height} meters",
+        "long_name": "neutral value of air temperature at reference height",
         "coverage_content_type": "modelResult",
         "valid_min": -10.0,
         "valid_max": 40.0
@@ -272,7 +274,7 @@ variables_info = {
     "neutral_specific_humidity_at_reference_height": {
         "units": "g/kg", 
         "standard_name": "specific_humidity",
-        "long_name": f"neutral value of air specific humidity at {reference_height} meters",
+        "long_name": "neutral value of air specific humidity at reference height",
         "coverage_content_type": "modelResult",
         "valid_min": 0.0,
         "valid_max": 30.0
@@ -575,9 +577,55 @@ def _normalize_albedo_method(albedo_method):
     raise ValueError("albedo_method must be 'Payne1972' or 'constant'")
 
 
-def get_variables_info(albedo_method=None):
+_REFERENCE_HEIGHT_VARIABLES = {
+    "wind_speed_at_reference_height": ("zrf_u", "wind speed at reference height ({height} m)"),
+    "neutral_wind_speed_at_reference_height": ("zrf_u", "neutral wind speed at reference height ({height} m)"),
+    "air_temperature_at_reference_height": ("zrf_t", "air temperature at reference height ({height} m)"),
+    "neutral_air_temperature_at_reference_height": (
+        "zrf_t",
+        "neutral value of air temperature at reference height ({height} m)",
+    ),
+    "specific_humidity_at_reference_height": ("zrf_q", "air specific humidity at reference height ({height} m)"),
+    "relative_humidity_at_reference_height": ("zrf_q", "air relative humidity at reference height ({height} m)"),
+    "neutral_specific_humidity_at_reference_height": (
+        "zrf_q",
+        "neutral value of air specific humidity at reference height ({height} m)",
+    ),
+}
+
+
+def _format_height_m(height):
+    return f"{float(height):g}"
+
+
+def _apply_reference_height_metadata(info, *, zrf_u, zrf_t, zrf_q):
+    heights = {
+        "zrf_u": float(zrf_u),
+        "zrf_t": float(zrf_t),
+        "zrf_q": float(zrf_q),
+    }
+    for variable_name, (height_key, long_name_template) in _REFERENCE_HEIGHT_VARIABLES.items():
+        metadata = info[variable_name]
+        height = heights[height_key]
+        metadata["long_name"] = long_name_template.format(height=_format_height_m(height))
+        metadata["reference_height_m"] = height
+
+
+def get_variables_info(
+    albedo_method=None,
+    *,
+    zrf_u=DEFAULT_REFERENCE_WIND_HEIGHT_M,
+    zrf_t=DEFAULT_REFERENCE_AIR_TEMPERATURE_HEIGHT_M,
+    zrf_q=DEFAULT_REFERENCE_HUMIDITY_HEIGHT_M,
+):
     """Return a deep copy of variables_info with optional albedo metadata tweaks."""
     info = copy.deepcopy(variables_info)
+    _apply_reference_height_metadata(
+        info,
+        zrf_u=zrf_u,
+        zrf_t=zrf_t,
+        zrf_q=zrf_q,
+    )
     method = _normalize_albedo_method(albedo_method)
     if method is None:
         return info
