@@ -570,3 +570,151 @@ def test_coare36_to_netcdf_current_available_only_updates_metadata(tmp_path):
     np.testing.assert_allclose(ds["L3_wind_direction"].values, 270.0)
     assert ds["L3_wind_speed"].attrs["comment"] == "Wind speed relative to surface current"
     assert ds["L3_wind_direction"].attrs["comment"] == "Wind direction relative to surface current"
+
+
+def test_coare36_to_netcdf_current_east_north_computes_relative_wind(tmp_path):
+    N = 4
+    inputs = _build_constant_inputs(N)
+    inputs["u"] = np.full(N, 10.0)
+    wind_direction = np.full(N, 270.0)
+    current_east = np.full(N, 1.0)
+    current_north = np.full(N, 0.0)
+
+    out_path = tmp_path / "coare36_current_relative.nc"
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text("{}", encoding="utf-8")
+
+    src = xr.Dataset(
+        {
+            "WXT_wind_speed": xr.DataArray(
+                inputs["u"],
+                dims=("time",),
+                attrs={
+                    "units": "m s-1",
+                    "long_name": "True wind speed",
+                    "standard_name": "wind_speed",
+                    "valid_min": 0.0,
+                    "valid_max": 50.0,
+                    "instrument": "INST_WXT",
+                },
+            ),
+            "WXT_wind_direction": xr.DataArray(
+                wind_direction,
+                dims=("time",),
+                attrs={
+                    "units": "degree",
+                    "long_name": "True wind direction",
+                    "standard_name": "wind_from_direction",
+                    "instrument": "INST_WXT",
+                },
+            ),
+        }
+    )
+
+    ds = coare36_to_netcdf(
+        out_path,
+        attrs_json,
+        **inputs,
+        wind_direction=wind_direction,
+        current_east=current_east,
+        current_north=current_north,
+        source_dataset=src,
+        input_vars_used={
+            "L3_wind_speed": "WXT_wind_speed",
+            "L3_wind_direction": "WXT_wind_direction",
+        },
+    )
+
+    # L3_wind_speed and L3_wind_direction retain measured values with rich attrs.
+    np.testing.assert_allclose(ds["L3_wind_speed"].values, inputs["u"])
+    np.testing.assert_allclose(ds["L3_wind_direction"].values, wind_direction)
+    assert ds["L3_wind_speed"].attrs["standard_name"] == "wind_speed"
+    assert ds["L3_wind_speed"].attrs["valid_max"] == 50.0
+    assert ds["L3_wind_speed"].attrs["instrument"] == "INST_WXT"
+    # Historical "relative to surface current" comment must not land on L3_wind_speed.
+    assert ds["L3_wind_speed"].attrs.get("comment", "") != (
+        "Wind speed relative to surface current"
+    )
+
+    # Derived diagnostics carry the arrays actually fed to the COARE core.
+    # Wind blows toward east (from-direction=270). Current is +1 m/s eastward, so
+    # relative wind magnitude should be measured - current = 9.0 m/s from 270.
+    assert "L3_relative_wind_speed" in ds
+    assert "L3_relative_wind_direction" in ds
+    np.testing.assert_allclose(ds["L3_relative_wind_speed"].values, 9.0, atol=1e-9)
+    np.testing.assert_allclose(ds["L3_relative_wind_direction"].values, 270.0, atol=1e-9)
+    assert ds["L3_relative_wind_speed"].attrs["comment"] == (
+        "Wind speed relative to surface current"
+    )
+    assert ds["L3_relative_wind_direction"].attrs["comment"] == (
+        "Wind direction relative to surface current"
+    )
+
+
+def test_coare36_to_netcdf_current_east_north_matches_pre_subtracted_wind(tmp_path):
+    """Passing measured wind + currents should yield identical COARE outputs to
+    passing the pre-subtracted relative wind, given the same core inputs."""
+    N = 5
+    base = _build_constant_inputs(N)
+    base["u"] = np.array([8.0, 9.5, 11.0, 7.5, 10.0])
+    wind_direction = np.array([90.0, 135.0, 180.0, 225.0, 270.0])
+    current_east = np.array([0.5, -0.3, 0.2, 0.4, -0.6])
+    current_north = np.array([0.1, 0.2, -0.4, 0.3, 0.5])
+
+    # Manual pre-subtraction using the same convention as the wrapper.
+    theta = np.deg2rad(wind_direction)
+    wind_east = -base["u"] * np.sin(theta)
+    wind_north = -base["u"] * np.cos(theta)
+    rel_east = wind_east - current_east
+    rel_north = wind_north - current_north
+    u_rel = np.sqrt(rel_east ** 2 + rel_north ** 2)
+    wd_rel = np.mod(np.rad2deg(np.arctan2(-rel_east, -rel_north)), 360.0)
+
+    out_a = tmp_path / "a.nc"
+    out_b = tmp_path / "b.nc"
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text("{}", encoding="utf-8")
+
+    ds_new = coare36_to_netcdf(
+        out_a,
+        attrs_json,
+        **base,
+        wind_direction=wind_direction,
+        current_east=current_east,
+        current_north=current_north,
+    )
+
+    inputs_legacy = dict(base)
+    inputs_legacy["u"] = u_rel
+    ds_legacy = coare36_to_netcdf(
+        out_b,
+        attrs_json,
+        **inputs_legacy,
+        wind_direction=wd_rel,
+    )
+
+    for name in [
+        "wind_stress",
+        "wind_speed_10_meters",
+        "sensible_heat_flux",
+        "latent_heat_flux",
+    ]:
+        np.testing.assert_allclose(
+            ds_new[name].values, ds_legacy[name].values, rtol=1e-12, atol=1e-12
+        )
+
+
+def test_coare36_to_netcdf_current_east_without_north_raises(tmp_path):
+    N = 3
+    inputs = _build_constant_inputs(N)
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="wind_direction"):
+        coare36_to_netcdf(
+            tmp_path / "out.nc",
+            attrs_json,
+            **inputs,
+            current_east=np.zeros(N),
+            current_north=np.zeros(N),
+        )
