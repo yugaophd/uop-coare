@@ -1156,7 +1156,7 @@ def albedo_vector(sw_dn = None,jd = None,lon = None,lat = None,eorw = None):
                 j = np.array(np.where(Achk == Achk.min()))
                 szj = j.shape
                 if szj[0] > 0:
-                    alb[k] = a[i,j]
+                    alb[k] = np.asarray(a[i, j]).ravel()[0]
                 else:
                     #       disp('no j found, not assigning alb to anything');
                     pass
