@@ -407,6 +407,44 @@ def _add_coare_height_variables(
     )
 
 
+def _wind_from_meteorological_direction(
+    speed: np.ndarray, direction_from_deg: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Meteorological (from) direction to eastward/northward components."""
+    theta = np.deg2rad(direction_from_deg)
+    east = -speed * np.sin(theta)
+    north = -speed * np.cos(theta)
+    return east, north
+
+
+def _components_to_meteorological_direction(
+    east: np.ndarray, north: np.ndarray
+) -> np.ndarray:
+    """Eastward/northward components to meteorological (from) direction in degrees."""
+    direction = np.rad2deg(np.arctan2(-east, -north))
+    return np.mod(direction, 360.0)
+
+
+def _compute_current_relative_wind(
+    u: Any,
+    wind_direction: Any,
+    current_east: Any,
+    current_north: Any,
+    n_rows: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return (u_rel, wd_rel) magnitudes/directions after subtracting surface current."""
+    u_arr = _broadcast_input_to_output(u, n_rows, "u")
+    wd_arr = _broadcast_input_to_output(wind_direction, n_rows, "wind_direction")
+    ce_arr = _broadcast_input_to_output(current_east, n_rows, "current_east")
+    cn_arr = _broadcast_input_to_output(current_north, n_rows, "current_north")
+    wind_east, wind_north = _wind_from_meteorological_direction(u_arr, wd_arr)
+    rel_east = wind_east - ce_arr
+    rel_north = wind_north - cn_arr
+    u_rel = np.sqrt(rel_east ** 2 + rel_north ** 2)
+    wd_rel = _components_to_meteorological_direction(rel_east, rel_north)
+    return u_rel, wd_rel
+
+
 def _load_global_attrs_json(global_attrs_json: str | Path) -> Dict[str, Any]:
     path = Path(global_attrs_json)
     if not path.exists():
@@ -454,6 +492,8 @@ def coare36_to_netcdf(
     sea_water_temperature_attrs: Optional[Dict[str, Any]] = None,
     instrument_config: Optional[Dict[str, str]] = None,
     current_available: bool = False,
+    current_east: Optional[Any] = None,
+    current_north: Optional[Any] = None,
     output_dim: str = "time",
     output_coord: Optional[Iterable[Any]] = None,
     dataset_attrs: Optional[Dict[str, Any]] = None,
@@ -536,10 +576,11 @@ def coare36_to_netcdf(
         Surface albedo method. Supported values are ``"constant"`` and
         ``"Payne1972"``.
     wind_direction
-        Meteorological wind direction in degrees clockwise from north. Only
-        used when ``current_available`` is ``True``. This wrapper does not
-        derive current-relative wind internally; pass current-relative wind
-        in ``u`` only when you computed it upstream.
+        Meteorological wind direction in degrees clockwise from north
+        (direction the wind is coming from). Required when the caller wants
+        current-relative wind computed internally (see ``current_east`` /
+        ``current_north``). Passed to the COARE solver so wind-direction
+        columns of derived outputs are populated.
     payne_min_solar_elev_deg
         Minimum solar elevation angle used by the Payne 1972 albedo lookup.
     source_dataset
@@ -565,11 +606,18 @@ def coare36_to_netcdf(
         Optional mapping of ``{role: instrument_name}`` written into global
         attributes as ``instrument_<role>``.
     current_available
-        If ``True``, annotate ``L3_wind_speed`` and ``L3_wind_direction`` as
-        relative to the surface current. This flag does not modify ``u`` or
-        perform any wind/current adjustment. When surface current is missing,
-        callers must pass true wind in ``u`` upstream rather than substituting
-        zero wind.
+        If ``True``, annotate the current-relative wind diagnostics
+        (``L3_relative_wind_speed`` / ``L3_relative_wind_direction``) as
+        derived from a surface current. Automatically set to ``True`` when
+        ``current_east`` and ``current_north`` are supplied.
+    current_east, current_north
+        Optional eastward and northward surface current components in m/s.
+        When both are provided together with ``wind_direction``, the wrapper
+        computes the current-relative wind speed and direction internally and
+        passes those arrays to the COARE 3.6 core. The measured ``u`` and
+        ``wind_direction`` remain the values stored on ``L3_wind_speed`` /
+        ``L3_wind_direction``; the derived arrays are additionally exported as
+        ``L3_relative_wind_speed`` / ``L3_relative_wind_direction``.
     output_dim
         Name of the output dimension.
     output_coord
@@ -593,9 +641,30 @@ def coare36_to_netcdf(
     cp_solver = _as_numpy_1d(cp, "cp") if cp is not None else None
     sigH_solver = _as_numpy_1d(sigH, "sigH") if sigH is not None else None
 
+    # Step 1b: if surface currents are supplied, compute current-relative wind
+    # and route it into the COARE core, while keeping the measured u and
+    # wind_direction as the source arrays for L3_wind_speed/L3_wind_direction.
+    currents_supplied = current_east is not None and current_north is not None
+    if currents_supplied and wind_direction is None:
+        raise ValueError(
+            "current_east/current_north require wind_direction to compute "
+            "current-relative wind."
+        )
+    if currents_supplied:
+        current_available = True
+        n_wind = _as_numpy_1d(u, "u").size
+        u_rel, wd_rel = _compute_current_relative_wind(
+            u, wind_direction, current_east, current_north, n_wind
+        )
+        u_for_solver = u_rel
+        wind_direction_for_solver = wd_rel
+    else:
+        u_for_solver = u
+        wind_direction_for_solver = wind_direction
+
     # Step 2: run COARE solver and force albedo outputs for complete metadata export.
     solver_output = coare36vn_zrf_et(
-        u=u,
+        u=u_for_solver,
         zu=zu,
         t=t,
         zt=zt,
@@ -619,7 +688,7 @@ def coare36_to_netcdf(
         coolskin=coolskin,
         albedo=albedo,
         return_albedo=True,
-        wind_direction=wind_direction,
+        wind_direction=wind_direction_for_solver,
         payne_min_solar_elev_deg=payne_min_solar_elev_deg,
         auto_plot=auto_plot,
     )
@@ -757,11 +826,52 @@ def coare36_to_netcdf(
 
     # Step 11: add optional comments when callers supplied current-relative wind.
     # This is metadata-only and does not alter the wind values passed to COARE.
+    # Step 11: when currents are available, emit derived current-relative
+    # wind diagnostics and annotate them. L3_wind_speed/L3_wind_direction
+    # continue to carry the measured values passed via u/wind_direction.
     if current_available:
-        if "L3_wind_direction" in ds:
-            ds["L3_wind_direction"].attrs["comment"] = "Wind direction relative to surface current"
-        if "L3_wind_speed" in ds:
-            ds["L3_wind_speed"].attrs["comment"] = "Wind speed relative to surface current"
+        if currents_supplied:
+            rel_speed_attrs = {
+                "units": "m s-1",
+                "long_name": "Wind speed relative to surface current",
+                "description": (
+                    "Magnitude of measured wind minus surface current vector; "
+                    "this is the wind speed actually passed to the COARE 3.6 core."
+                ),
+                "comment": "Wind speed relative to surface current",
+            }
+            rel_dir_attrs = {
+                "units": "degree",
+                "long_name": "Wind direction relative to surface current",
+                "description": (
+                    "Meteorological direction (clockwise from north) of the "
+                    "measured-wind-minus-current vector; passed to the COARE "
+                    "3.6 core."
+                ),
+                "comment": "Wind direction relative to surface current",
+            }
+            ds["L3_relative_wind_speed"] = xr.DataArray(
+                np.asarray(u_for_solver, dtype=float),
+                dims=(output_dim,),
+                attrs=_sanitize_netcdf_attrs(rel_speed_attrs),
+            )
+            if wind_direction_for_solver is not None:
+                ds["L3_relative_wind_direction"] = xr.DataArray(
+                    np.asarray(wind_direction_for_solver, dtype=float),
+                    dims=(output_dim,),
+                    attrs=_sanitize_netcdf_attrs(rel_dir_attrs),
+                )
+        else:
+            # Legacy path: caller pre-subtracted current before calling; keep
+            # the historical annotation on L3_wind_speed / L3_wind_direction.
+            if "L3_wind_direction" in ds:
+                ds["L3_wind_direction"].attrs["comment"] = (
+                    "Wind direction relative to surface current"
+                )
+            if "L3_wind_speed" in ds:
+                ds["L3_wind_speed"].attrs["comment"] = (
+                    "Wind speed relative to surface current"
+                )
 
     # Step 12: create scalar metadata used by COARE and used in global attrs.
     zu_scalar = _as_float_attr(zu, "zu")
