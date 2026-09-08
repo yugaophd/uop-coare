@@ -118,7 +118,16 @@ from uop_coare import get_variables_info
 - `coare36_to_netcdf` accepts the same core inputs as `coare36vn_zrf_et` and writes a CF-convention NetCDF file with all output variables named and attributed from `get_variables_info`.
 - NetCDF reference-height metadata defaults to 10 m for wind and 2 m for air temperature and humidity.
 - The air-density output is COARE `rhoa`, computed inside the solver from `t`, `rh`, and pressure adjusted to `zt`; it is not a caller-supplied input and is not recomputed from the reference-height profile outputs.
-- `uop_coare` does not preprocess wind into current-relative wind internally. Pass current-relative wind in `u` only if you computed it upstream; otherwise pass true wind.
+- `uop_coare` can compute current-relative wind for you: pass measured wind
+  in `u` and `wind_direction`, and eastward/northward surface current
+  components in `current_east` / `current_north`. The wrapper subtracts the
+  current internally and passes the current-relative wind speed and direction
+  to the COARE 3.6 core. `L3_wind_speed` and `L3_wind_direction` continue to
+  store the measured values (with attrs from `input_vars_used`), while the
+  arrays fed to the core are exported as
+  `L3_relative_wind_speed` / `L3_relative_wind_direction`. Omit the current
+  kwargs to keep the legacy behaviour where `u` is expected to be
+  pre-subtracted.
 - `current_available=True` in `coare36_to_netcdf` only annotates L3 wind metadata as current-relative. It does not change wind values or perform any wind/current adjustment.
 - If surface current is missing, callers should handle that upstream by passing true wind, not by substituting `0 m/s` wind.
 - When `source_dataset` is provided to `coare36_to_netcdf`, instrument variables are copied through unchanged and non-instrument L3 variables are carried into the L4 file as `L3_*` variables with their metadata preserved.
