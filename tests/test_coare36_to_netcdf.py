@@ -352,6 +352,7 @@ def test_coare36_to_netcdf_matches_solver_output(tmp_path):
     ds = coare36_to_netcdf(out_path, attrs_json, **inputs, albedo="constant")
 
     names = list(get_variables_info(albedo_method="constant").keys())
+    assert direct.shape[1] == len(names) + 3
     i_friction_velocity = names.index("friction_velocity")
     i_net_solar_radiation = names.index("net_solar_radiation")
     i_albedo = names.index("albedo")
@@ -359,6 +360,94 @@ def test_coare36_to_netcdf_matches_solver_output(tmp_path):
     np.testing.assert_allclose(ds["friction_velocity"].values, direct[:, i_friction_velocity])
     np.testing.assert_allclose(ds["net_solar_radiation"].values, direct[:, i_net_solar_radiation])
     np.testing.assert_allclose(ds["albedo"].values, direct[:, i_albedo])
+
+
+def test_coare36_to_netcdf_preserves_nan_rows_and_reports_valid_samples(tmp_path):
+    n_samples = 4
+    inputs = _build_constant_inputs(n_samples)
+    inputs["u"][1] = np.nan
+    inputs["sw_dn"][2] = np.nan
+    output_coord = np.arange(100, 100 + n_samples)
+    source_values = np.array([3.0, np.nan, 5.0, 6.0])
+    out_path = tmp_path / "coare36_nan_rows.nc"
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text("{}", encoding="utf-8")
+    source = xr.Dataset(
+        {
+            "wind_speed": xr.DataArray(
+                inputs["u"],
+                dims=("source_time",),
+                attrs={"units": "m/s", "long_name": "measured wind speed"},
+            ),
+            "custom_l3": xr.DataArray(
+                source_values,
+                dims=("source_time",),
+                attrs={"units": "m", "long_name": "raw source values"},
+            ),
+        }
+    )
+
+    ds = coare36_to_netcdf(
+        out_path,
+        attrs_json,
+        **inputs,
+        source_dataset=source,
+        output_coord=output_coord,
+    )
+
+    valid = np.isfinite(ds["friction_velocity"].values)
+    np.testing.assert_array_equal(ds["time"].values, output_coord)
+    np.testing.assert_array_equal(ds["L3_wind_speed"].values, inputs["u"])
+    np.testing.assert_array_equal(ds["L3_downwelling_shortwave_flux"].values, inputs["sw_dn"])
+    np.testing.assert_array_equal(ds["L3_custom_l3"].values, source_values)
+    np.testing.assert_array_equal(ds["COARE_valid_sample"].values, valid.astype(np.int8))
+    assert ds["COARE_valid_sample"].dtype == np.int8
+    np.testing.assert_array_equal(ds["COARE_valid_sample"].attrs["flag_values"], [0, 1])
+    assert ds["COARE_valid_sample"].attrs["flag_meanings"] == "invalid valid"
+    assert ds["COARE_valid_sample"].attrs["coverage_content_type"] == "qualityInformation"
+    assert ds.attrs["coare_total_samples"] == n_samples
+    assert ds.attrs["coare_valid_samples"] == int(np.count_nonzero(valid))
+    assert "without row dropping or NaN filling" in ds.attrs["coare_nan_handling"]
+    assert "even when cool skin is disabled" in ds.attrs["coare_nan_handling"]
+    assert np.isnan(ds["friction_velocity"].values[1])
+    assert np.isnan(ds["net_solar_radiation"].values[2])
+
+    with xr.open_dataset(out_path) as saved:
+        np.testing.assert_array_equal(saved["time"].values, output_coord)
+        np.testing.assert_array_equal(saved["L3_wind_speed"].values, inputs["u"])
+        np.testing.assert_array_equal(saved["L3_downwelling_shortwave_flux"].values, inputs["sw_dn"])
+        np.testing.assert_array_equal(saved["L3_custom_l3"].values, source_values)
+        assert saved["L3_custom_l3"].attrs == source["custom_l3"].attrs
+        np.testing.assert_array_equal(saved["COARE_valid_sample"].values, valid.astype(np.int8))
+        assert saved.attrs["coare_total_samples"] == n_samples
+        assert saved.attrs["coare_valid_samples"] == int(np.count_nonzero(valid))
+
+
+def test_coare36_to_netcdf_warns_and_skips_mismatched_l3_source_variable(tmp_path):
+    n_samples = 3
+    inputs = _build_constant_inputs(n_samples)
+    out_path = tmp_path / "coare36_l3_length_mismatch.nc"
+    attrs_json = tmp_path / "global_attrs.json"
+    attrs_json.write_text("{}", encoding="utf-8")
+    source = xr.Dataset(
+        {
+            "short_l3_variable": xr.DataArray(
+                np.array([1.0, 2.0]),
+                dims=("source_time",),
+                attrs={"units": "m"},
+            )
+        }
+    )
+
+    with pytest.warns(UserWarning, match="short_l3_variable.*length 2.*output length 3"):
+        ds = coare36_to_netcdf(
+            out_path,
+            attrs_json,
+            **inputs,
+            source_dataset=source,
+        )
+
+    assert "L3_short_l3_variable" not in ds
 
 
 def test_coare36_to_netcdf_copies_l3_source_variables_with_prefixed_names(tmp_path):

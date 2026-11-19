@@ -23,10 +23,17 @@ List of functions in this code are:
 
 previous versin by ludovic Bariteau, CU/CIRES, NOAA/ESRL/PSL, August 2022
 uop_coare version v1 by Yu Gao and Tom Farrar, Feb 2026
+
+Inputs may contain NaNs. No filling or defaults are applied; dependent outputs
+become NaN for that sample while physically independent outputs may remain
+finite. Payne1972 albedo and its solar diagnostics are NaN when sw_dn, jd, lat,
+or lon is non-finite. Missing shortwave or longwave radiation can leave
+turbulent fluxes NaN even when cool skin is disabled.
 """
-import numpy as np
+import datetime as dt
 import os
-from datetime import datetime
+from pathlib import Path
+import numpy as np
 
 def calculate_jd(time):
     """
@@ -57,8 +64,10 @@ def calculate_jd(time):
             py_datetimes = arr
 
     jd = np.array([
-        (dt - datetime(dt.year, 1, 1, tzinfo=getattr(dt, 'tzinfo', None))).total_seconds() / 86400.0 + 1.0
-        for dt in py_datetimes
+        (timestamp - dt.datetime(
+            timestamp.year, 1, 1, tzinfo=getattr(timestamp, 'tzinfo', None)
+        )).total_seconds() / 86400.0 + 1.0
+        for timestamp in py_datetimes
     ], dtype=float)
 
     return jd
@@ -372,8 +381,8 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
 ### Make sure INPUTS are consistent in size. 
 # Best to avoid NaNs as inputs as well. Will prevent weird results
 
-    # be sure array inputs are ndarray floats for single value function
-    # if inputs are already ndarray float this does nothing
+        # be sure array inputs are ndarray floats for single value function
+        # if inputs are already ndarray float this does nothing
     # otherwise copies are created in the local namespace
     # .flatten() return a 1D version in case single value input is already an array (array([[]]) vs array([]))
     if u.size ==1 and t.size ==1: 
@@ -422,15 +431,7 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
     elif sigH is None:
         sigH = np.nan * np.ones(N)
      
-# Option to set local variables to default values if input is NaN... can do
-# single value or fill each individual. Warning... this will fill arrays
-# with the dummy values and produce results where no input data are valid
-# ii=find(isnan(P)); P(ii)=1013;    # pressure
-# ii=find(isnan(sw_dn)); sw_dn(ii)=200;   # incident shortwave radiation
-# ii=find(isnan(lat)); lat(ii)=45;  # latitude
-# ii=find(isnan(lw_dn)); lw_dn(ii)=400-1.6*abs(lat(ii)); # incident longwave radiation
-# ii=find(isnan(zi)); zi(ii)=600;   # PBL height
-# ii=find(isnan(Ss)); Ss(ii)=35;    # Salinity
+# No default filling is applied to missing inputs.
     
 # find missing input data
 # iip = np.where(np.isnan(P))
@@ -698,7 +699,7 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
         tvsr = np.multiply(tsr,(1 + np.multiply(0.61,Q))) + np.multiply(0.61 * ta,qsr)
         tssr = np.multiply(tsr,(1 + np.multiply(0.51,Q))) + np.multiply(0.51 * ta,qsr)
         Bf = np.multiply(np.multiply(- grav / ta,usr),tvsr)
-        gust = 0.2 * np.ones(N)
+        gust = np.where(np.isfinite(Bf), 0.2, np.nan)
         k = np.array(np.where(Bf > 0))
         ### gustiness in this way is from the original code. Notes:
         # we measured the actual gustiness by measuring the variance of the
@@ -758,7 +759,10 @@ def coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi
         del k
         dT_skin = np.multiply(qcol,dz_skin) / tcw
         dq_skin = np.multiply(wetc,dT_skin)
-        lw_net = 0.97 * (5.67e-08 * (ts - np.multiply(dT_skin,jcool) + T2K) ** 4 - lw_dn)
+        # Avoid NaN * 0 contaminating net longwave when cool skin is disabled.
+        coolskin_offset = np.zeros_like(dT_skin)
+        np.multiply(dT_skin, jcool, out=coolskin_offset, where=jcool != 0)
+        lw_net = 0.97 * (5.67e-08 * (ts - coolskin_offset + T2K) ** 4 - lw_dn)
         if i == 1:
             usr50 = usr[k50]
             tsr50 = tsr[k50]
@@ -1123,7 +1127,17 @@ def albedo_vector(sw_dn = None,jd = None,lon = None,lat = None,eorw = None):
     #       0     2     4     6     8     10    12    14    16    18    20   22     24    26    28    30    32    34    36    38    40    42    44    46    48    50    52    54    56    58    60    62    64    66    68    70    72    74    76    78    80    82    84    86    88    90
     a = np.array([[0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061],[0.062,0.062,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061],[0.072,0.07,0.068,0.065,0.065,0.063,0.062,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.061,0.06,0.061,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06],[0.087,0.083,0.079,0.073,0.07,0.068,0.066,0.065,0.064,0.063,0.062,0.061,0.061,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06],[0.115,0.108,0.098,0.086,0.082,0.077,0.072,0.071,0.067,0.067,0.065,0.063,0.062,0.061,0.061,0.06,0.06,0.06,0.06,0.061,0.061,0.061,0.061,0.06,0.059,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.06,0.059,0.059,0.059],[0.163,0.145,0.13,0.11,0.101,0.092,0.084,0.079,0.072,0.072,0.068,0.067,0.064,0.063,0.062,0.061,0.061,0.061,0.06,0.06,0.06,0.06,0.06,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.058],[0.235,0.198,0.174,0.15,0.131,0.114,0.103,0.094,0.083,0.08,0.074,0.074,0.07,0.067,0.065,0.064,0.063,0.062,0.061,0.06,0.06,0.06,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.058,0.058,0.058],[0.318,0.263,0.228,0.192,0.168,0.143,0.127,0.113,0.099,0.092,0.084,0.082,0.076,0.072,0.07,0.067,0.065,0.064,0.062,0.062,0.06,0.06,0.06,0.059,0.059,0.059,0.059,0.059,0.059,0.059,0.058,0.058,0.058,0.058,0.058,0.058,0.058,0.058,0.057,0.058,0.058,0.058,0.058,0.057,0.057,0.057],[0.395,0.336,0.29,0.248,0.208,0.176,0.151,0.134,0.117,0.107,0.097,0.091,0.085,0.079,0.075,0.071,0.068,0.067,0.065,0.063,0.062,0.061,0.06,0.06,0.06,0.059,0.059,0.058,0.058,0.058,0.057,0.057,0.057,0.057,0.057,0.057,0.057,0.056,0.056,0.056,0.056,0.056,0.056,0.056,0.056,0.055],[0.472,0.415,0.357,0.306,0.252,0.21,0.176,0.154,0.135,0.125,0.111,0.102,0.094,0.086,0.081,0.076,0.072,0.071,0.068,0.066,0.065,0.063,0.062,0.061,0.06,0.059,0.058,0.057,0.057,0.057,0.056,0.055,0.055,0.055,0.055,0.055,0.055,0.054,0.053,0.054,0.053,0.053,0.054,0.054,0.053,0.053],[0.542,0.487,0.424,0.36,0.295,0.242,0.198,0.173,0.15,0.136,0.121,0.11,0.101,0.093,0.086,0.081,0.076,0.073,0.069,0.067,0.065,0.064,0.062,0.06,0.059,0.058,0.057,0.056,0.055,0.055,0.054,0.053,0.053,0.052,0.052,0.052,0.051,0.051,0.05,0.05,0.05,0.05,0.051,0.05,0.05,0.05],[0.604,0.547,0.498,0.407,0.331,0.272,0.219,0.185,0.16,0.141,0.127,0.116,0.105,0.097,0.089,0.083,0.077,0.074,0.069,0.066,0.063,0.061,0.059,0.057,0.056,0.055,0.054,0.053,0.053,0.052,0.051,0.05,0.05,0.049,0.049,0.049,0.048,0.047,0.047,0.047,0.046,0.046,0.047,0.047,0.046,0.046],[0.655,0.595,0.556,0.444,0.358,0.288,0.236,0.19,0.164,0.145,0.13,0.119,0.107,0.098,0.09,0.084,0.076,0.073,0.068,0.064,0.06,0.058,0.056,0.054,0.053,0.051,0.05,0.049,0.048,0.048,0.047,0.046,0.046,0.045,0.045,0.045,0.044,0.043,0.043,0.043,0.042,0.042,0.043,0.042,0.042,0.042],[0.693,0.631,0.588,0.469,0.375,0.296,0.245,0.193,0.165,0.145,0.131,0.118,0.106,0.097,0.088,0.081,0.074,0.069,0.065,0.061,0.057,0.055,0.052,0.05,0.049,0.047,0.046,0.046,0.044,0.044,0.043,0.042,0.042,0.041,0.041,0.04,0.04,0.039,0.039,0.039,0.038,0.038,0.038,0.038,0.038,0.038],[0.719,0.656,0.603,0.48,0.385,0.3,0.25,0.193,0.164,0.145,0.131,0.116,0.103,0.092,0.084,0.076,0.071,0.065,0.061,0.057,0.054,0.051,0.049,0.047,0.045,0.043,0.043,0.042,0.041,0.04,0.039,0.039,0.038,0.038,0.037,0.036,0.036,0.035,0.035,0.034,0.034,0.034,0.034,0.034,0.034,0.034],[0.732,0.67,0.592,0.474,0.377,0.291,0.246,0.19,0.162,0.144,0.13,0.114,0.1,0.088,0.08,0.072,0.067,0.062,0.058,0.054,0.05,0.047,0.045,0.043,0.041,0.039,0.039,0.038,0.037,0.036,0.036,0.035,0.035,0.034,0.033,0.032,0.032,0.032,0.031,0.031,0.031,0.03,0.03,0.03,0.03,0.03],[0.73,0.652,0.556,0.444,0.356,0.273,0.235,0.188,0.16,0.143,0.129,0.113,0.097,0.086,0.077,0.069,0.064,0.06,0.055,0.051,0.047,0.044,0.042,0.039,0.037,0.035,0.035,0.035,0.034,0.033,0.033,0.032,0.032,0.032,0.029,0.029,0.029,0.029,0.028,0.028,0.028,0.028,0.027,0.027,0.028,0.028],[0.681,0.602,0.488,0.386,0.32,0.252,0.222,0.185,0.159,0.142,0.127,0.111,0.096,0.084,0.075,0.067,0.062,0.058,0.054,0.05,0.046,0.042,0.04,0.036,0.035,0.033,0.032,0.032,0.031,0.03,0.03,0.03,0.03,0.029,0.027,0.027,0.027,0.027,0.026,0.026,0.026,0.026,0.026,0.026,0.026,0.026],[0.581,0.494,0.393,0.333,0.288,0.237,0.211,0.182,0.158,0.141,0.126,0.11,0.095,0.083,0.074,0.066,0.061,0.057,0.053,0.049,0.045,0.041,0.039,0.034,0.033,0.032,0.031,0.03,0.029,0.028,0.028,0.028,0.028,0.027,0.026,0.026,0.026,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025],[0.453,0.398,0.342,0.301,0.266,0.226,0.205,0.18,0.157,0.14,0.125,0.109,0.095,0.083,0.074,0.065,0.061,0.057,0.052,0.048,0.044,0.04,0.038,0.033,0.032,0.031,0.03,0.029,0.028,0.027,0.027,0.026,0.026,0.026,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025],[0.425,0.37,0.325,0.29,0.255,0.22,0.2,0.178,0.157,0.14,0.122,0.108,0.095,0.083,0.074,0.065,0.061,0.056,0.052,0.048,0.044,0.04,0.038,0.033,0.032,0.031,0.03,0.029,0.028,0.027,0.026,0.026,0.026,0.026,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025,0.025]])
 
+    valid_samples = np.broadcast_arrays(
+        np.isfinite(sw_dn),
+        np.isfinite(jd),
+        np.isfinite(lon),
+        np.isfinite(lat),
+    )
+    valid_samples = np.logical_and.reduce(valid_samples)
+
     if T.size==1:   ### for single value function
+        if not bool(np.asarray(valid_samples).reshape(-1)[0]):
+            return np.array([np.nan]), np.array([np.nan]), np.array([np.nan]), np.array([np.nan])
         Tchk = np.abs(Ts - T)
         i = np.array(np.where(Tchk == Tchk.min()))
         if psi < 0:
@@ -1143,6 +1157,12 @@ def albedo_vector(sw_dn = None,jd = None,lon = None,lat = None,eorw = None):
                 pass
     else:  ### for vectorized function
         for k in np.arange(0,np.size(sinpsi)).reshape(-1):
+            if not valid_samples[k]:
+                alb[k] = np.nan
+                T[k] = np.nan
+                solarmax[k] = np.nan
+                psi[k] = np.nan
+                continue
             Tchk = np.abs(Ts - T[k])
             i = np.array(np.where(Tchk == Tchk.min()))
             if psi[k] < 0:
@@ -1173,11 +1193,12 @@ def main():
     # import util
     # import matplotlib.pyplot as plt
 
-    # This code executes if 'run coare36vn_zrf_et.py' is executed from iPython cmd line
-    # Edit this path to indicate the location of the test data file.
-    path = '/Users/ludo/Documents/Work/COARE/conversion2python_tests/'
-    fil = 'test_36_data.txt'
-    data = np.genfromtxt(path + fil, skip_header=1)
+    # Set COARE_TEST_DATA_DIR to the directory containing the legacy test input.
+    data_dir = Path(os.environ.get(
+        "COARE_TEST_DATA_DIR",
+        Path(__file__).resolve().parents[2] / "data" / "external" / "coare",
+    ))
+    data = np.genfromtxt(data_dir / "test_36_data.txt", skip_header=1)
     u = data[:,1]
     t = data[:,3]
     rh = data[:,5]
@@ -1201,9 +1222,9 @@ def main():
     sigH = data[:,17]
 
     A=coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi,rain, Ss, cp , sigH, zrf_u, zrf_t, zrf_q)
-    fnameA = os.path.join(path,'test_36_output_py_082022_withwavesinput.txt')
+    fnameA = data_dir / "test_36_output_py_082022_withwavesinput.txt"
     # A=coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi,rain, Ss, None , None, zrf_u, zrf_t, zrf_q)
-    # fnameA = os.path.join(path,'test_36_output_py_082022_withnowavesinput.txt')
+    # fnameA = data_dir / "test_36_output_py_082022_withnowavesinput.txt"
     A_hdr = 'usr\ttau\thsb\thlb\thbb\thlwebb\ttsr\tqsr\tzo\tzot\tzoq\tCd\t'
     A_hdr += 'Ch\tCe\tL\tzeta\tdT_skinx\tdq_skinx\tdz_skin\tUrf\tTrf\tQrf\t'
     A_hdr += 'RHrf\tUrfN\tTrfN\tQrfN\tlw_net\tsw_net\tLe\trhoa\tUN\tU10\tU10N\t'

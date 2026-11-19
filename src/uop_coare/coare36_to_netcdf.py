@@ -1,10 +1,7 @@
-from __future__ import annotations
-
 import json
+import warnings
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
-
 import numpy as np
 import xarray as xr
 
@@ -22,7 +19,7 @@ try:
 except PackageNotFoundError:
     UOP_COARE_VERSION = "unknown"
 
-def _as_numpy_1d(value: Any, name: str) -> np.ndarray:
+def _as_numpy_1d(value, name):
     arr = np.asarray(value.values if hasattr(value, "values") else value)
     if arr.ndim == 0:
         return arr.reshape(1)
@@ -31,7 +28,7 @@ def _as_numpy_1d(value: Any, name: str) -> np.ndarray:
     return arr
 
 
-def _coerce_coord(coord: Optional[Iterable[Any]], n: int, dim_name: str) -> np.ndarray:
+def _coerce_coord(coord, n, dim_name):
     if coord is None:
         return np.arange(n, dtype=int)
     arr = np.asarray(coord)
@@ -44,7 +41,7 @@ def _coerce_coord(coord: Optional[Iterable[Any]], n: int, dim_name: str) -> np.n
     return arr
 
 
-def _as_float_attr(value: Any, name: str) -> float:
+def _as_float_attr(value, name):
     arr = np.asarray(value.values if hasattr(value, "values") else value, dtype=float)
     if arr.ndim == 0:
         return float(arr)
@@ -53,7 +50,7 @@ def _as_float_attr(value: Any, name: str) -> float:
     return float(np.nanmean(arr))
 
 
-def _broadcast_input_to_output(value: Any, n_rows: int, name: str) -> np.ndarray:
+def _broadcast_input_to_output(value, n_rows, name):
     arr = _as_numpy_1d(value, name)
     if arr.size == 1:
         return np.full(n_rows, arr[0])
@@ -63,10 +60,10 @@ def _broadcast_input_to_output(value: Any, n_rows: int, name: str) -> np.ndarray
 
 
 def _resolve_instrument_name(
-    source_dataset: xr.Dataset,
-    instrument_name: str,
-    role: str,
-) -> str:
+    source_dataset,
+    instrument_name,
+    role,
+):
     if instrument_name in source_dataset.variables:
         return instrument_name
 
@@ -86,9 +83,9 @@ def _resolve_instrument_name(
 
 
 def _resolve_instrument_config(
-    source_dataset: Optional[xr.Dataset],
-    instrument_config: Optional[Dict[str, str]],
-) -> Dict[str, str]:
+    source_dataset,
+    instrument_config,
+):
     if instrument_config is None:
         return {}
     if source_dataset is None:
@@ -99,7 +96,7 @@ def _resolve_instrument_config(
     }
 
 
-def _default_l3_input_metadata() -> Dict[str, Dict[str, str]]:
+def _default_l3_input_metadata():
     return {
         "L3_wind_speed": {
             "units": "m s-1",
@@ -201,26 +198,26 @@ def _default_l3_input_metadata() -> Dict[str, Dict[str, str]]:
 
 def _l3_input_specs(
     *,
-    u: Any,
-    zu: Any,
-    t: Any,
-    zt: Any,
-    rh: Any,
-    zq: Any,
-    P: Any,
-    ts: Any,
-    sw_dn: Any,
-    lw_dn: Any,
-    lat: Any,
-    lon: Any,
-    jd: Any,
-    zi: Any,
-    rain: Any,
-    Ss: Any,
-    cp: Any = None,
-    sigH: Any = None,
-    wind_direction: Any = None,
-) -> Dict[str, tuple[Any, str]]:
+    u,
+    zu,
+    t,
+    zt,
+    rh,
+    zq,
+    P,
+    ts,
+    sw_dn,
+    lw_dn,
+    lat,
+    lon,
+    jd,
+    zi,
+    rain,
+    Ss,
+    cp=None,
+    sigH=None,
+    wind_direction=None,
+):
     specs = {
         "L3_wind_speed": (u, "wind_speed"),
         "L3_wind_height": (zu, "wind_height"),
@@ -249,23 +246,23 @@ def _l3_input_specs(
 
 
 def _build_l3_input_dataarray(
-    values: Any,
-    n_rows: int,
-    output_dim: str,
+    values,
+    n_rows,
+    output_dim,
     *,
-    source_var: Optional[xr.DataArray] = None,
-    fallback_attrs: Optional[Dict[str, Any]] = None,
-) -> xr.DataArray:
+    source_var=None,
+    fallback_attrs=None,
+):
     data = _broadcast_input_to_output(values, n_rows, output_dim)
     attrs = dict(source_var.attrs) if source_var is not None else dict(fallback_attrs or {})
     return xr.DataArray(data, dims=(output_dim,), attrs=_sanitize_netcdf_attrs(attrs))
 
 
 def _add_instrument_variables(
-    ds_out: xr.Dataset,
-    source_dataset: Optional[xr.Dataset],
-    instrument_prefix: str | Iterable[str],
-) -> None:
+    ds_out,
+    source_dataset,
+    instrument_prefix,
+):
     if source_dataset is None:
         return
     prefixes = _normalize_prefixes(instrument_prefix)
@@ -276,19 +273,19 @@ def _add_instrument_variables(
             ds_out[var_name] = source_dataset[var_name].copy(deep=True)
 
 
-def _normalize_prefixes(prefixes: str | Iterable[str]) -> tuple[str, ...]:
+def _normalize_prefixes(prefixes):
     if isinstance(prefixes, str):
         return (prefixes,)
     return tuple(prefix for prefix in prefixes if isinstance(prefix, str) and prefix)
 
 
 def _build_l3_dataarray(
-    values: Any,
-    n_rows: int,
-    output_dim: str,
+    values,
+    n_rows,
+    output_dim,
     *,
-    source_var: Optional[xr.DataArray] = None,
-) -> Optional[xr.DataArray]:
+    source_var=None,
+):
     data = np.asarray(values.values if hasattr(values, "values") else values)
     if data.ndim == 0:
         data = np.full(n_rows, data.item())
@@ -299,19 +296,19 @@ def _build_l3_dataarray(
     return xr.DataArray(data, dims=(output_dim,), attrs=attrs)
 
 
-def _l3_output_name(var_name: str) -> str:
+def _l3_output_name(var_name):
     return var_name if var_name.startswith("L3_") else f"L3_{var_name}"
 
 
 def _copy_prefixed_l3_variables(
-    ds_out: xr.Dataset,
-    source_dataset: Optional[xr.Dataset],
-    n_rows: int,
-    output_dim: str,
-    instrument_prefix: str | Iterable[str],
+    ds_out,
+    source_dataset,
+    n_rows,
+    output_dim,
+    instrument_prefix,
     *,
-    skip_outputs: Optional[set[str]] = None,
-) -> None:
+    skip_outputs=None,
+):
     if source_dataset is None:
         return
 
@@ -321,21 +318,30 @@ def _copy_prefixed_l3_variables(
         if var_name.startswith(prefixes):
             continue
 
+        data = np.asarray(source_var.values)
+        if data.ndim == 1 and data.size != n_rows:
+            warnings.warn(
+                f"Skipping L3 source variable {var_name!r}: length {data.size} does not match "
+                f"the COARE output length {n_rows}.",
+                UserWarning,
+                stacklevel=2,
+            )
+            continue
+
         output_name = _l3_output_name(var_name)
         if output_name in skip_outputs:
             continue
-        data = np.asarray(source_var.values)
         attrs = dict(source_var.attrs)
 
         if data.ndim == 0:
             ds_out[output_name] = xr.DataArray(data.item(), attrs=attrs)
             continue
-        if data.ndim == 1 and data.size == n_rows:
+        if data.ndim == 1:
             ds_out[output_name] = xr.DataArray(data.copy(), dims=(output_dim,), attrs=attrs)
 
 
-def _sanitize_netcdf_attrs(attrs: Dict[str, Any]) -> Dict[str, Any]:
-    clean: Dict[str, Any] = {}
+def _sanitize_netcdf_attrs(attrs):
+    clean = {}
     for key, value in attrs.items():
         if value is None:
             continue
@@ -347,15 +353,15 @@ def _sanitize_netcdf_attrs(attrs: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _add_coare_height_variables(
-    ds_out: xr.Dataset,
+    ds_out,
     *,
-    zu: float,
-    zt: float,
-    zq: float,
-    zrf_u: float,
-    zrf_t: float,
-    zrf_q: float,
-) -> None:
+    zu,
+    zt,
+    zq,
+    zrf_u,
+    zrf_t,
+    zrf_q,
+):
     """Add scalar COARE observation and reference heights as dataset variables."""
     ds_out["coare_wind_observation_height"] = xr.DataArray(
         float(zu),
@@ -408,8 +414,8 @@ def _add_coare_height_variables(
 
 
 def _wind_from_meteorological_direction(
-    speed: np.ndarray, direction_from_deg: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
+    speed, direction_from_deg
+):
     """Meteorological (from) direction to eastward/northward components."""
     theta = np.deg2rad(direction_from_deg)
     east = -speed * np.sin(theta)
@@ -418,20 +424,20 @@ def _wind_from_meteorological_direction(
 
 
 def _components_to_meteorological_direction(
-    east: np.ndarray, north: np.ndarray
-) -> np.ndarray:
+    east, north
+):
     """Eastward/northward components to meteorological (from) direction in degrees."""
     direction = np.rad2deg(np.arctan2(-east, -north))
     return np.mod(direction, 360.0)
 
 
 def _compute_current_relative_wind(
-    u: Any,
-    wind_direction: Any,
-    current_east: Any,
-    current_north: Any,
-    n_rows: int,
-) -> tuple[np.ndarray, np.ndarray]:
+    u,
+    wind_direction,
+    current_east,
+    current_north,
+    n_rows,
+):
     """Return (u_rel, wd_rel) magnitudes/directions after subtracting surface current."""
     u_arr = _broadcast_input_to_output(u, n_rows, "u")
     wd_arr = _broadcast_input_to_output(wind_direction, n_rows, "wind_direction")
@@ -445,7 +451,7 @@ def _compute_current_relative_wind(
     return u_rel, wd_rel
 
 
-def _load_global_attrs_json(global_attrs_json: str | Path) -> Dict[str, Any]:
+def _load_global_attrs_json(global_attrs_json):
     path = Path(global_attrs_json)
     if not path.exists():
         raise FileNotFoundError(f"Global attributes JSON file not found: {path}")
@@ -457,8 +463,8 @@ def _load_global_attrs_json(global_attrs_json: str | Path) -> Dict[str, Any]:
 
 
 def coare36_to_netcdf(
-    output_path: str | Path,
-    global_attrs_json: str | Path,
+    output_path,
+    global_attrs_json,
     *,
     u,
     zu,
@@ -478,28 +484,28 @@ def coare36_to_netcdf(
     Ss,
     cp=None,
     sigH=None,
-    zrf_u: float = DEFAULT_REFERENCE_WIND_HEIGHT_M,
-    zrf_t: float = DEFAULT_REFERENCE_AIR_TEMPERATURE_HEIGHT_M,
-    zrf_q: float = DEFAULT_REFERENCE_HUMIDITY_HEIGHT_M,
-    coolskin: bool = True,
-    albedo: str = "constant",
+    zrf_u=DEFAULT_REFERENCE_WIND_HEIGHT_M,
+    zrf_t=DEFAULT_REFERENCE_AIR_TEMPERATURE_HEIGHT_M,
+    zrf_q=DEFAULT_REFERENCE_HUMIDITY_HEIGHT_M,
+    coolskin=True,
+    albedo="constant",
     wind_direction=None,
-    payne_min_solar_elev_deg: float = 2.0,
-    source_dataset: Optional[xr.Dataset] = None,
-    instrument_prefix: str | Iterable[str] = "INST_",
-    input_vars_used: Optional[Dict[str, str]] = None,
-    sea_water_temperature: Optional[Any] = None,
-    sea_water_temperature_attrs: Optional[Dict[str, Any]] = None,
-    instrument_config: Optional[Dict[str, str]] = None,
-    current_available: bool = False,
-    current_east: Optional[Any] = None,
-    current_north: Optional[Any] = None,
-    output_dim: str = "time",
-    output_coord: Optional[Iterable[Any]] = None,
-    dataset_attrs: Optional[Dict[str, Any]] = None,
-    auto_plot: bool = False,
-    to_netcdf_kwargs: Optional[Dict[str, Any]] = None,
-) -> xr.Dataset:
+    payne_min_solar_elev_deg=2.0,
+    source_dataset=None,
+    instrument_prefix="INST_",
+    input_vars_used=None,
+    sea_water_temperature=None,
+    sea_water_temperature_attrs=None,
+    instrument_config=None,
+    current_available=False,
+    current_east=None,
+    current_north=None,
+    output_dim="time",
+    output_coord=None,
+    dataset_attrs=None,
+    auto_plot=False,
+    to_netcdf_kwargs=None,
+):
     """
     Run COARE 3.6, assemble an L4 ``xarray.Dataset``, and write it to NetCDF.
 
@@ -517,6 +523,12 @@ def coare36_to_netcdf(
     ``L3_air_temperature``, and the corresponding instrument-height variables,
     the wrapper always writes the actual values passed into this function while
     preserving metadata from the matching source L3 variable when available.
+
+    Every row on the calculation grid is retained, including rows with NaN
+    inputs. No input filling or row filtering is performed, and ``output_coord``
+    must describe the full grid. ``COARE_valid_sample`` marks rows where
+    ``friction_velocity`` is finite. Missing shortwave or longwave radiation
+    can leave turbulent fluxes missing even when cool skin is disabled.
 
     Parameters
     ----------
@@ -722,6 +734,17 @@ def coare36_to_netcdf(
             data = -data
         ds[name] = xr.DataArray(data, dims=(output_dim,), attrs=attrs)
 
+    valid_samples = np.isfinite(ds["friction_velocity"].values)
+    ds["COARE_valid_sample"] = xr.DataArray(
+        valid_samples.astype(np.int8),
+        dims=(output_dim,),
+        attrs={
+            "flag_values": np.array([0, 1], dtype=np.int8),
+            "flag_meanings": "invalid valid",
+            "coverage_content_type": "qualityInformation",
+        },
+    )
+
     lat_arr = _as_numpy_1d(lat, "lat")
     lon_arr = _as_numpy_1d(lon, "lon")
     if lat_arr.size == 1:
@@ -913,6 +936,12 @@ def coare36_to_netcdf(
         "reference_wind_height_m": zrf_u_scalar,
         "reference_air_temperature_height_m": zrf_t_scalar,
         "reference_humidity_height_m": zrf_q_scalar,
+        "coare_total_samples": int(n_rows),
+        "coare_valid_samples": int(np.count_nonzero(valid_samples)),
+        "coare_nan_handling": (
+            "Full-grid export without row dropping or NaN filling. Missing shortwave or longwave "
+            "radiation can leave turbulent fluxes missing even when cool skin is disabled."
+        ),
     }
     if resolved_instrument_config:
         for role, inst_name in resolved_instrument_config.items():

@@ -135,6 +135,22 @@ from uop_coare import get_variables_info
 - Inputs may be scalars or vectors. See the function docstring for full details.
 - `jd` can be numeric yearday or datetime-like inputs (UTC); datetime inputs are converted to yearday internally.
 
+## NaN handling (v1.5.0)
+
+The solver and NetCDF wrapper accept full-grid input arrays containing NaNs.
+Rows are not dropped, inputs are not filled, and raw `L3_*` values are
+preserved. Outputs that depend on a missing input are NaN for that sample;
+physically independent outputs may remain finite. With `albedo="Payne1972"`,
+non-finite shortwave, yearday, latitude, or longitude produces NaN albedo and
+solar diagnostics for that sample.
+
+The wrapper writes `COARE_valid_sample` (1 where `friction_velocity` is finite)
+and the global sample-count attributes `coare_total_samples` and
+`coare_valid_samples`. Missing shortwave or longwave radiation can still leave
+turbulent fluxes missing when `coolskin=False`; this conservative radiation
+requirement is unchanged. No default filling or radiation-independent mode is
+provided.
+
 ## Test Demo
 
 ```bash
